@@ -43,9 +43,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r python_app/requirements.txt
       - name: Build Windows executable
-        run: |
-          cd python_app
-          build_exe_windows.bat
+        # run the .bat with cmd to avoid PowerShell execution issues
+        run: cmd /c "cd python_app && build_exe_windows.bat"
       - name: Build NSIS installer
         run: |
           cd python_app
