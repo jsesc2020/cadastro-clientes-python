@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [master]
 
+# Force actions to run on Node.js 24 to avoid Node.js 20 deprecation issues
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   windows:
     name: Build Windows packages
-    runs-on: windows-latest
+    # use the new specific image to avoid redirect warnings
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
