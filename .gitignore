@@ -1,0 +1,26 @@
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+ENV/
+env/
+
+# VSCode
+.vscode/
+
+# distribution / packaging
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/

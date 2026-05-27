@@ -1,0 +1,29 @@
+{
+  "name": "cadastro-clientes-local",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "migrate": "node server/migrations/run.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "knex": "^2.6.0",
+    "cors": "^2.8.5",
+    "bcrypt": "^5.1.0",
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.14",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jest": "^29.7.0",
+    "@testing-library/react": "^14.3.1"
+  }
+}
