@@ -8,6 +8,7 @@ Repositório para a versão local do sistema de cadastro de clientes em Python.
 - `python_app/server/` - backend Flask e rotas de API
 - `python_app/installer/` - scripts e templates de instalador
 - `python_app/README.md` - documentação do app local
+- `.github/workflows/package.yml` - GitHub Actions para build de EXE/MSI/DEB
 
 ## Como usar
 

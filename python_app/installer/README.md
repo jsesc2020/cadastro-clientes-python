@@ -68,3 +68,12 @@ O script gera um pacote `.deb` em `python_app/dist/` usando o binário Linux cri
 - O pacote DEB é um wrapper em torno do binário PyInstaller e inclui a pasta `data/`.
 - Se usar frontend estático, copie `C:\workspace\dist` para `python_app/server/static/` antes de empacotar.
 - Os scripts são exemplos e devem ser ajustados ao fluxo de distribuição do seu ambiente.
+
+## GitHub Actions
+
+O repositório também inclui um workflow em `.github/workflows/package.yml` que:
+- gera o EXE Windows com PyInstaller
+- cria o instalador NSIS e o MSI Windows
+- gera o pacote DEB Linux
+- executa os testes Python
+- publica os artefatos de build
