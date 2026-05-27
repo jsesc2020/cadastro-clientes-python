@@ -7,10 +7,11 @@ import os
 
 block_cipher = None
 
-datas = [
-    Tree('data', prefix='data'),
-    Tree(os.path.join('server', 'static'), prefix=os.path.join('server', 'static')),
-]
+# data/ is created at runtime by app.init_db(), so we don't include it in datas
+# Only include server/static if it exists and has content
+datas = []
+if os.path.isdir('server/static') and os.listdir('server/static'):
+    datas.append(Tree('server/static', prefix='server/static'))
 
 a = Analysis(['server/app.py'],
              pathex=['.'],
