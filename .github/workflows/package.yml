@@ -17,6 +17,20 @@ jobs:
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v4
+      - name: Debug runner (Windows)
+        shell: powershell
+        run: |
+          Write-Host '=== Runner info ==='
+          Write-Host (Get-Item env:PROCESSOR_ARCHITECTURE).Value
+          node --version 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'node not found' }
+          python --version 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'python not found' }
+          py -3 --version 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'py launcher not found' }
+          Write-Host '=== PATH sample ==='
+          $env:PATH.Split(';')[0..10] -join ';'
+          Write-Host '=== where checks ==='
+          cmd /c "where makensis || echo makensis-not-found"
+          cmd /c "where candle || echo candle-not-found"
+          cmd /c "where light || echo light-not-found"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -56,6 +70,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Debug runner (Linux)
+        run: |
+          echo '=== Runner info ==='
+          uname -a || true
+          node --version 2>/dev/null || echo 'node not found'
+          python3 --version 2>/dev/null || echo 'python3 not found'
+          which py || true
+          echo '=== PATH sample ==='
+          echo $PATH | tr ':' '\n' | sed -n '1,10p'
+          echo '=== which checks ==='
+          which makensis || echo makensis-not-found
+          which candle || echo candle-not-found
+          which light || echo light-not-found
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
