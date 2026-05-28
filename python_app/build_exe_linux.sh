@@ -3,19 +3,18 @@ set -euo pipefail
 # Build Linux executable with PyInstaller (robust logging for CI)
 echo "[build_exe_linux] Starting build on $(uname -a)"
 
+echo "[build_exe_linux] Installing Python dependencies..."
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
 echo "[build_exe_linux] Running PyInstaller..."
-# Prefer using the spec if present, otherwise run onefile with add-data
-if [ -f server/app.spec ]; then
-	python -m PyInstaller server/app.spec --clean --noconfirm || true
-else
-	python -m PyInstaller --onefile --add-data "data:data" --add-data "server/static:server/static" server/app.py || true
+PYINSTALLER_CMD=(python -m PyInstaller --onefile)
+if [ -d server/static ] && [ "$(ls -A server/static)" ]; then
+  PYINSTALLER_CMD+=(--add-data "server/static:server/static")
 fi
-
-echo "[build_exe_linux] PyInstaller finished. Listing dist/ and build/"
-ls -la dist || true
+# data/ is created at runtime and must not be included during build
+PYINSTALLER_CMD+=(server/app.py)
+"${PYINSTALLER_CMD[@]}" || true
 ls -la build || true
 
 if [ -f dist/app ] || [ -f dist/app.exe ]; then

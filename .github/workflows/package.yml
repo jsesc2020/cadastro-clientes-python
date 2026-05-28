@@ -38,6 +38,7 @@ jobs:
       - name: Install Windows packaging tools (NSIS, WiX)
         run: |
           choco install nsis wixtoolset -y
+          refreshenv
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
