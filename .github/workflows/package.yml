@@ -38,7 +38,6 @@ jobs:
       - name: Install Windows packaging tools (NSIS, WiX)
         run: |
           choco install nsis wixtoolset -y
-          refreshenv
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -48,12 +47,20 @@ jobs:
         run: cmd /c "cd python_app && build_exe_windows.bat"
       - name: Build NSIS installer
         shell: powershell
+        env:
+          NSIS_PATH: 'C:\Program Files (x86)\NSIS'
+          WIX_PATH: 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
         run: |
+          $env:Path = "$env:NSIS_PATH;$env:WIX_PATH;$env:Path"
           cd python_app
           .\installer\build_windows_installer.ps1
       - name: Build MSI installer
         shell: powershell
+        env:
+          NSIS_PATH: 'C:\Program Files (x86)\NSIS'
+          WIX_PATH: 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
         run: |
+          $env:Path = "$env:NSIS_PATH;$env:WIX_PATH;$env:Path"
           cd python_app
           .\installer\build_msi.ps1
       - name: Run Python tests

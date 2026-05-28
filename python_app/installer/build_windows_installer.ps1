@@ -3,9 +3,26 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location (Join-Path $root '..')
 
+# Add Chocolatey-installed tool paths to PATH
+$env:Path += ";C:\Program Files (x86)\NSIS"
+
 # Refresh environment to pick up recently installed tools (NSIS, etc.)
 if (Test-Path 'C:\ProgramData\chocolatey\bin\refreshenv.cmd') {
-    & cmd /c 'C:\ProgramData\chocolatey\bin\refreshenv.cmd'
+    & cmd /c 'C:\ProgramData\chocolatey\bin\refreshenv.cmd' | Out-Null
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+}
+
+# Check if makensis is available
+if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+    Write-Warning "makensis not found in PATH. Checking common installation paths..."
+    $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
+    if (Test-Path $nsisPath) {
+        Write-Host "Found makensis at $nsisPath"
+        Set-Alias -Name makensis -Value $nsisPath
+    } else {
+        Write-Warning "NSIS not installed or makensis.exe not found. Skipping NSIS build."
+        exit 0
+    }
 }
 
 Write-Host 'Installing PyInstaller...'

@@ -15,18 +15,7 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
 
 app = Flask(__name__, static_folder=str(BASE_DIR / 'static'))
 
-# register api blueprints
-from .routes.clients import bp as clients_bp
-from .routes.contracts import bp as contracts_bp
-from .routes.pontos import bp as pontos_bp
-from .routes.proprietarios import bp as proprietarios_bp
-
-app.register_blueprint(clients_bp, url_prefix='/api/clients')
-app.register_blueprint(contracts_bp, url_prefix='/api/contracts')
-app.register_blueprint(pontos_bp, url_prefix='/api/pontos')
-app.register_blueprint(proprietarios_bp, url_prefix='/api/proprietarios')
-
-# DB helpers
+# DB helpers - must be defined BEFORE importing routes to avoid circular imports
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -252,6 +241,17 @@ def serve(path):
     if index.exists():
         return send_from_directory(static_dir, 'index.html')
     return jsonify({'status': 'Flask server running'})
+
+# Register API blueprints (must be done AFTER utility functions are defined to avoid circular imports)
+from .routes.clients import bp as clients_bp
+from .routes.contracts import bp as contracts_bp
+from .routes.pontos import bp as pontos_bp
+from .routes.proprietarios import bp as proprietarios_bp
+
+app.register_blueprint(clients_bp, url_prefix='/api/clients')
+app.register_blueprint(contracts_bp, url_prefix='/api/contracts')
+app.register_blueprint(pontos_bp, url_prefix='/api/pontos')
+app.register_blueprint(proprietarios_bp, url_prefix='/api/proprietarios')
 
 if __name__ == '__main__':
     init_db()
