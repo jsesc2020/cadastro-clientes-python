@@ -71,7 +71,19 @@ $outMsi = Join-Path $distDir 'CadastroClientes.msi'
 Write-Host "Compilando $wxsFile ..."
 candle -out $wixobjFile $wxsFile
 
+if ($LASTEXITCODE -ne 0) {
+    throw "candle.exe falhou com codigo $LASTEXITCODE. Verifique os erros acima."
+}
+
+if (-not (Test-Path $wixobjFile)) {
+    throw "Arquivo .wixobj nao foi gerado: $wixobjFile"
+}
+
 Write-Host "Linkando MSI para $outMsi ..."
 light -out $outMsi $wixobjFile
+
+if ($LASTEXITCODE -ne 0) {
+    throw "light.exe falhou com codigo $LASTEXITCODE."
+}
 
 Write-Host "MSI gerado em: $outMsi"

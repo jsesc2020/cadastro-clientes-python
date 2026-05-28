@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="Cadastro Clientes Local" Language="1033" Version="1.0.0.0" Manufacturer="Your Company" UpgradeCode="PUT-GUID-HERE">
+  <Product Id="*" Name="Cadastro Clientes Local" Language="1033" Version="1.0.0.0" Manufacturer="Your Company" UpgradeCode="{42FC26BC-7041-47F5-BBA6-2C0A04CAF416}">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate />
@@ -19,13 +19,13 @@
     </Directory>
 
     <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="MainExecutable" Guid="PUT-GUID-HERE">
+      <Component Id="MainExecutable" Guid="{46AA86D2-8D33-47D4-ACAB-64E932795119}">
         <File Id="AppExe" Source="..\dist\app.exe" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
     <DirectoryRef Id="ProgramMenuDir">
-      <Component Id="ProgramMenuShortcut" Guid="PUT-GUID-HERE">
+      <Component Id="ProgramMenuShortcut" Guid="{DF9B86FF-42D1-44D5-AD67-F13DAD7FF495}">
         <Shortcut Id="ApplicationStartMenuShortcut" Name="Cadastro Clientes" Description="Abra o servidor local de Cadastro Clientes" Target="[INSTALLFOLDER]app.exe" WorkingDirectory="INSTALLFOLDER" />
         <RemoveFolder Id="ProgramMenuDir" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\CadastroClientes" Name="installed" Type="integer" Value="1" KeyPath="yes" />
