@@ -2,7 +2,7 @@
 ; Produz um instalador que copia app.exe, banco local e frontend estático.
 
 Name "Cadastro Clientes Local"
-OutFile "dist\installer\CadastroClientesInstaller.exe"
+OutFile "..\dist\installer\CadastroClientesInstaller.exe"
 InstallDir "$PROGRAMFILES\CadastroClientes"
 RequestExecutionLevel user
 ShowInstDetails show

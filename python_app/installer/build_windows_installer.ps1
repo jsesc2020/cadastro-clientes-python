@@ -35,14 +35,32 @@ if (-not (Test-Path dist\app.exe)) {
     throw 'Build failed: dist\app.exe not found'
 }
 
-if (-not (Test-Path dist\installer)) {
-    New-Item -ItemType Directory -Path dist\installer | Out-Null
-}
+# Create output directory for installer BEFORE calling makensis
+$installerOutputDir = Join-Path (Get-Location) "dist" "installer"
+New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
+Write-Host "Output directory ready: $installerOutputDir"
 
 Write-Host 'Generating NSIS installer...'
 if (-not (Test-Path installer\windows_installer.nsi)) {
     throw 'NSIS script not found: installer\windows_installer.nsi'
 }
-makensis installer\windows_installer.nsi
 
-Write-Host 'Build complete. Installer created at dist\installer\CadastroClientesInstaller.exe'
+# Call makensis - it will use OutFile path from the NSI script
+Write-Host "Running makensis from: $(Get-Location)"
+& makensis installer\windows_installer.nsi
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "NSIS build failed with exit code $LASTEXITCODE"
+    if (Test-Path "$installerOutputDir\CadastroClientesInstaller.exe") {
+        Write-Host "Installer file exists despite warnings. Continuing..."
+    } else {
+        throw "NSIS build failed and installer file was not created"
+    }
+}
+
+if (Test-Path "$installerOutputDir\CadastroClientesInstaller.exe") {
+    Write-Host 'Build complete. Installer created at' "$installerOutputDir\CadastroClientesInstaller.exe"
+} else {
+    Write-Warning "Installer file not found at expected location. Checking directory contents..."
+    Get-ChildItem $installerOutputDir -Recurse
+}
