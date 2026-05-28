@@ -36,7 +36,7 @@ if (-not (Test-Path dist\app.exe)) {
 }
 
 # Create output directory for installer BEFORE calling makensis
-$installerOutputDir = Join-Path (Get-Location) "dist" "installer"
+$installerOutputDir = Join-Path (Join-Path (Get-Location) "dist") "installer"
 New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
 Write-Host "Output directory ready: $installerOutputDir"
 
