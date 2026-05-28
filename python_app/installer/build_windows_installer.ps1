@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location (Join-Path $root '..')
 
+# Refresh environment to pick up recently installed tools (NSIS, etc.)
+if (Test-Path 'C:\ProgramData\chocolatey\bin\refreshenv.cmd') {
+    & cmd /c 'C:\ProgramData\chocolatey\bin\refreshenv.cmd'
+}
+
 Write-Host 'Installing PyInstaller...'
 pip install pyinstaller
 

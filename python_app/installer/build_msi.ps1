@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $scriptDir
 
+# Refresh environment to pick up recently installed tools (WiX, etc.)
+if (Test-Path 'C:\ProgramData\chocolatey\bin\refreshenv.cmd') {
+    & cmd /c 'C:\ProgramData\chocolatey\bin\refreshenv.cmd'
+}
+
 if (-not (Get-Command candle -ErrorAction SilentlyContinue)) {
     throw 'WiX Toolset não encontrado. Instale o WiX e certifique-se de que candle.exe está no PATH.'
 }

@@ -47,13 +47,15 @@ jobs:
         # run the .bat with cmd to avoid PowerShell execution issues
         run: cmd /c "cd python_app && build_exe_windows.bat"
       - name: Build NSIS installer
+        shell: powershell
         run: |
           cd python_app
-          powershell -NoProfile -ExecutionPolicy Bypass -File installer\build_windows_installer.ps1
+          .\installer\build_windows_installer.ps1
       - name: Build MSI installer
+        shell: powershell
         run: |
           cd python_app
-          powershell -NoProfile -ExecutionPolicy Bypass -File installer\build_msi.ps1
+          .\installer\build_msi.ps1
       - name: Run Python tests
         run: |
           cd python_app

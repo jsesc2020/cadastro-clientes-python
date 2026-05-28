@@ -16,10 +16,10 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
 app = Flask(__name__, static_folder=str(BASE_DIR / 'static'))
 
 # register api blueprints
-from routes.clients import bp as clients_bp
-from routes.contracts import bp as contracts_bp
-from routes.pontos import bp as pontos_bp
-from routes.proprietarios import bp as proprietarios_bp
+from .routes.clients import bp as clients_bp
+from .routes.contracts import bp as contracts_bp
+from .routes.pontos import bp as pontos_bp
+from .routes.proprietarios import bp as proprietarios_bp
 
 app.register_blueprint(clients_bp, url_prefix='/api/clients')
 app.register_blueprint(contracts_bp, url_prefix='/api/contracts')
