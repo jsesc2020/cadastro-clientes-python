@@ -243,10 +243,17 @@ def serve(path):
     return jsonify({'status': 'Flask server running'})
 
 # Register API blueprints (must be done AFTER utility functions are defined to avoid circular imports)
-from .routes.clients import bp as clients_bp
-from .routes.contracts import bp as contracts_bp
-from .routes.pontos import bp as pontos_bp
-from .routes.proprietarios import bp as proprietarios_bp
+# Suporta tanto execucao normal (importacao relativa) quanto PyInstaller (importacao absoluta)
+try:
+    from .routes.clients import bp as clients_bp
+    from .routes.contracts import bp as contracts_bp
+    from .routes.pontos import bp as pontos_bp
+    from .routes.proprietarios import bp as proprietarios_bp
+except ImportError:
+    from server.routes.clients import bp as clients_bp
+    from server.routes.contracts import bp as contracts_bp
+    from server.routes.pontos import bp as pontos_bp
+    from server.routes.proprietarios import bp as proprietarios_bp
 
 app.register_blueprint(clients_bp, url_prefix='/api/clients')
 app.register_blueprint(contracts_bp, url_prefix='/api/contracts')

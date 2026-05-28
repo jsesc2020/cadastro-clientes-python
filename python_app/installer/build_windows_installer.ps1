@@ -29,13 +29,32 @@ Write-Host 'Installing PyInstaller...'
 pip install pyinstaller
 
 Write-Host 'Building executable with PyInstaller...'
-pyinstaller --onefile --add-data "data;data" --add-data "server/static;server/static" server/app.py
+pyinstaller --onefile `
+    --name app `
+    --add-data "server/static;server/static" `
+    --hidden-import flask `
+    --hidden-import werkzeug `
+    --hidden-import werkzeug.security `
+    --hidden-import werkzeug.middleware.proxy_fix `
+    --hidden-import jwt `
+    --hidden-import bcrypt `
+    --hidden-import dotenv `
+    --hidden-import sqlite3 `
+    --hidden-import server `
+    --hidden-import server.routes `
+    --hidden-import server.routes.clients `
+    --hidden-import server.routes.contracts `
+    --hidden-import server.routes.pontos `
+    --hidden-import server.routes.proprietarios `
+    --collect-all flask `
+    --collect-all werkzeug `
+    main.py
 
 if (-not (Test-Path dist\app.exe)) {
     throw 'Build failed: dist\app.exe not found'
 }
 
-# Create output directory for installer BEFORE calling makensis
+# Create output directory for installer (compativel com PowerShell 5.1)
 $installerOutputDir = Join-Path (Join-Path (Get-Location) "dist") "installer"
 New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
 Write-Host "Output directory ready: $installerOutputDir"
@@ -45,7 +64,6 @@ if (-not (Test-Path installer\windows_installer.nsi)) {
     throw 'NSIS script not found: installer\windows_installer.nsi'
 }
 
-# Call makensis - it will use OutFile path from the NSI script
 Write-Host "Running makensis from: $(Get-Location)"
 & makensis installer\windows_installer.nsi
 
