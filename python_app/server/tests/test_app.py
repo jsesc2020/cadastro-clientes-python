@@ -1,13 +1,32 @@
 import pytest
-from server.app import app, init_db, get_db
-import json
+import tempfile
+import os
+import server.app as app_module
+from server.app import app, init_db
 
 @pytest.fixture
 def client():
-    init_db()
+    """
+    Cria um banco SQLite temporario isolado para cada teste.
+    Garante que dados de um teste nao interfiram em outro.
+    """
+    db_fd, db_path = tempfile.mkstemp(suffix='.sqlite3')
+    os.close(db_fd)
+
+    # Aponta o modulo para o banco temporario
+    original_db_path = app_module.DB_PATH
+    app_module.DB_PATH = db_path
+
     app.config['TESTING'] = True
+    init_db()
+
     with app.test_client() as c:
         yield c
+
+    # Restaura e remove o banco temporario
+    app_module.DB_PATH = original_db_path
+    os.unlink(db_path)
+
 
 def test_register_and_login(client):
     # register
@@ -54,7 +73,7 @@ def test_clients_and_contracts(client):
     rv = client.get('/api/clients/', headers={'Authorization': f'Bearer {token}'})
     clients = rv.get_json()
     cid = clients[0]['id'] if clients else 1
-    rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': ponto_id, 'valor_cents': 10000, 'data_inicio': '2026-05-01', 'data_termino': '2026-05-31'}, headers={'Authorization': f'Bearer {token}'} )
+    rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': ponto_id, 'valor_cents': 10000, 'data_inicio': '2026-05-01', 'data_termino': '2026-05-31'}, headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 200
 
 def test_contract_status_and_point_conflicts(client):
@@ -70,18 +89,22 @@ def test_contract_status_and_point_conflicts(client):
     rv = client.get('/api/pontos/', headers={'Authorization': f'Bearer {token}'})
     pid = rv.get_json()[0]['id']
 
+    # Cria o primeiro contrato — deve retornar 200
     rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': pid, 'valor_cents': 15000, 'data_inicio': '2026-06-01', 'data_termino': '2026-06-30'}, headers={'Authorization': f'Bearer {token}'})
-    assert rv.status_code == 200
+    assert rv.status_code == 200, f"Esperado 200, recebido {rv.status_code}: {rv.get_json()}"
     contract_id = rv.get_json()['id']
 
+    # Tenta criar segundo contrato no mesmo ponto — deve retornar 400 (conflito)
     rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': pid, 'valor_cents': 8000, 'data_inicio': '2026-06-15', 'data_termino': '2026-06-20'}, headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 400
     assert 'active contract' in rv.get_json().get('error', '').lower()
 
+    # Cancela o contrato
     rv = client.post(f'/api/contracts/{contract_id}/cancel', headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 200
     assert rv.get_json()['status'] == 'CANCELADO'
 
+    # Renova o contrato cancelado
     rv = client.post(f'/api/contracts/{contract_id}/renew', json={'data_termino': '2026-07-31'}, headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 200
     assert rv.get_json()['status'] == 'ATIVO'
