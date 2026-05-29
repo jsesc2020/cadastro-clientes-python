@@ -3,16 +3,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location (Join-Path $root '..')
 
-# Add Chocolatey-installed tool paths to PATH
+# Adiciona NSIS ao PATH
 $env:Path += ";C:\Program Files (x86)\NSIS"
 
-# Refresh environment to pick up recently installed tools (NSIS, etc.)
-if (Test-Path 'C:\ProgramData\chocolatey\bin\refreshenv.cmd') {
-    & cmd /c 'C:\ProgramData\chocolatey\bin\refreshenv.cmd' | Out-Null
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-}
-
-# Check if makensis is available
+# Verifica se makensis esta disponivel
 if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
     Write-Warning "makensis not found in PATH. Checking common installation paths..."
     $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
@@ -25,22 +19,34 @@ if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
     }
 }
 
-Write-Host 'Installing PyInstaller...'
+# Instala dependencias do projeto + PyInstaller
+Write-Host 'Installing dependencies...'
+pip install -r requirements.txt
 pip install pyinstaller
+
+# Garante que main.py existe na raiz do python_app
+if (-not (Test-Path main.py)) {
+    throw 'main.py nao encontrado. Certifique-se de que o arquivo existe em python_app/main.py'
+}
 
 Write-Host 'Building executable with PyInstaller...'
 pyinstaller --onefile `
     --name app `
     --add-data "server/static;server/static" `
     --hidden-import flask `
+    --hidden-import flask.json `
+    --hidden-import flask.logging `
     --hidden-import werkzeug `
     --hidden-import werkzeug.security `
+    --hidden-import werkzeug.routing `
+    --hidden-import werkzeug.exceptions `
     --hidden-import werkzeug.middleware.proxy_fix `
     --hidden-import jwt `
     --hidden-import bcrypt `
     --hidden-import dotenv `
     --hidden-import sqlite3 `
     --hidden-import server `
+    --hidden-import server.app `
     --hidden-import server.routes `
     --hidden-import server.routes.clients `
     --hidden-import server.routes.contracts `
@@ -48,13 +54,17 @@ pyinstaller --onefile `
     --hidden-import server.routes.proprietarios `
     --collect-all flask `
     --collect-all werkzeug `
+    --collect-all bcrypt `
+    --collect-all jwt `
     main.py
 
 if (-not (Test-Path dist\app.exe)) {
-    throw 'Build failed: dist\app.exe not found'
+    throw 'Build falhou: dist\app.exe nao foi gerado'
 }
 
-# Create output directory for installer (compativel com PowerShell 5.1)
+Write-Host 'Executavel gerado com sucesso: dist\app.exe'
+
+# Cria diretorio de saida para o instalador (compativel com PowerShell 5.1)
 $installerOutputDir = Join-Path (Join-Path (Get-Location) "dist") "installer"
 New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
 Write-Host "Output directory ready: $installerOutputDir"
