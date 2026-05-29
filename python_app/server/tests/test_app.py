@@ -2,11 +2,14 @@ import pytest
 import tempfile
 import os
 import sys
-import importlib
 
-# Importa o modulo pelo caminho completo para evitar conflito de nomes
-import server.app as _server_app_module
+# Importa o pacote primeiro para garantir que o modulo seja registrado no sys.modules
+import server.app
 from server.app import app, init_db
+
+# Acessa o modulo real via sys.modules, evitando conflito com o __init__.py do pacote
+# que sobrescreve server.app com o objeto Flask
+_mod = sys.modules['server.app']
 
 
 @pytest.fixture
@@ -18,9 +21,8 @@ def client():
     db_fd, db_path = tempfile.mkstemp(suffix='.sqlite3')
     os.close(db_fd)
 
-    # Guarda e substitui o caminho do banco no modulo
-    original_db_path = _server_app_module.DB_PATH
-    _server_app_module.DB_PATH = db_path
+    original_db_path = _mod.DB_PATH
+    _mod.DB_PATH = db_path
 
     app.config['TESTING'] = True
     init_db()
@@ -28,8 +30,7 @@ def client():
     with app.test_client() as c:
         yield c
 
-    # Restaura o caminho original e remove o arquivo temporario
-    _server_app_module.DB_PATH = original_db_path
+    _mod.DB_PATH = original_db_path
     try:
         os.unlink(db_path)
     except OSError:
@@ -42,8 +43,7 @@ def test_register_and_login(client):
 
     rv = client.post('/api/auth/login', json={'email': 'test@local', 'password': 'pass123'})
     if rv.status_code == 200:
-        data = rv.get_json()
-        assert 'token' in data
+        assert 'token' in rv.get_json()
 
 
 def test_collaborator_crud(client):
@@ -73,8 +73,7 @@ def test_clients_and_contracts(client):
     ponto_id = rv.get_json()['id']
 
     rv = client.get('/api/clients/', headers={'Authorization': f'Bearer {token}'})
-    clients = rv.get_json()
-    cid = clients[0]['id'] if clients else 1
+    cid = rv.get_json()[0]['id']
 
     rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': ponto_id, 'valor_cents': 10000, 'data_inicio': '2026-05-01', 'data_termino': '2026-05-31'}, headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 200
