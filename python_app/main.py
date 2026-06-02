@@ -1,19 +1,10 @@
-# Ponto de entrada para o PyInstaller
-# Evita problemas com importacoes relativas ao empacotar com --onefile
-
 import sys
 import os
+from pathlib import Path
 
-# Garante que o diretorio do executavel esteja no path
+# Corrige diretorio de trabalho para junto do .exe
 if getattr(sys, 'frozen', False):
-    # Rodando como executavel PyInstaller
-    base_dir = sys._MEIPASS
-    sys.path.insert(0, base_dir)
-
-# Muda o diretorio de trabalho para junto do executavel
-# (importante para que os caminhos de data/ e static/ funcionem)
-if getattr(sys, 'frozen', False):
-    os.chdir(os.path.dirname(sys.executable))
+    os.chdir(Path(sys.executable).parent)
 
 from server.app import app, init_db
 import webbrowser

@@ -3,7 +3,10 @@ from ..app import get_db, token_required, row_exists
 
 bp = Blueprint('proprietarios', __name__)
 
-_FIELDS = 'id, nome, documento, telefone, email, cep, logradouro, numero, complemento, bairro, cidade, estado, banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix, created_at'
+_FIELDS = '''id, nome, documento, telefone, email,
+    cep, logradouro, numero, complemento, bairro, cidade, estado,
+    banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix,
+    created_at'''
 
 @bp.route('/', methods=['GET'])
 @token_required
@@ -23,7 +26,8 @@ def add_proprietario():
     conn = get_db()
     cur = conn.cursor()
     cur.execute('''INSERT INTO proprietarios
-        (nome, documento, telefone, email, cep, logradouro, numero, complemento, bairro, cidade, estado,
+        (nome, documento, telefone, email,
+         cep, logradouro, numero, complemento, bairro, cidade, estado,
          banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (nome, data.get('documento'), data.get('telefone'), data.get('email'),
@@ -44,7 +48,7 @@ def get_proprietario(pid):
     row = conn.execute(f'SELECT {_FIELDS} FROM proprietarios WHERE id = ?', (pid,)).fetchone()
     conn.close()
     if not row:
-        return jsonify({'error': 'Proprietário not found'}), 404
+        return jsonify({'error': 'Proprietario not found'}), 404
     return jsonify(dict(row))
 
 @bp.route('/<int:pid>', methods=['PUT'])
@@ -52,7 +56,7 @@ def get_proprietario(pid):
 def update_proprietario(pid):
     data = request.get_json() or {}
     if not row_exists('proprietarios', pid):
-        return jsonify({'error': 'Proprietário not found'}), 404
+        return jsonify({'error': 'Proprietario not found'}), 404
     conn = get_db()
     conn.execute('''UPDATE proprietarios SET
         nome=?, documento=?, telefone=?, email=?,
@@ -73,7 +77,7 @@ def update_proprietario(pid):
 @token_required
 def delete_proprietario(pid):
     if not row_exists('proprietarios', pid):
-        return jsonify({'error': 'Proprietário not found'}), 404
+        return jsonify({'error': 'Proprietario not found'}), 404
     conn = get_db()
     conn.execute('DELETE FROM proprietarios WHERE id = ?', (pid,))
     conn.commit()

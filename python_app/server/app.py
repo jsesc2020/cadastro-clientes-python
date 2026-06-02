@@ -1,4 +1,5 @@
 import os
+import sys
 import sqlite3
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,15 +8,26 @@ import datetime
 from functools import wraps
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / 'data'
-DATA_DIR.mkdir(exist_ok=True)
+# ── Detecta modo PyInstaller vs script normal ──────────────────
+if getattr(sys, 'frozen', False):
+    # Rodando como .exe: arquivos estaticos em _MEIPASS/server/static
+    _BUNDLE = Path(sys._MEIPASS)
+    _EXE_DIR = Path(sys.executable).parent
+    BASE_DIR = _BUNDLE
+    DATA_DIR = _EXE_DIR / 'data'
+    STATIC_DIR = _BUNDLE / 'server' / 'static'
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    DATA_DIR = BASE_DIR / 'data'
+    STATIC_DIR = Path(__file__).resolve().parent / 'static'
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / 'app.sqlite3'
 JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
 
-app = Flask(__name__, static_folder=str(BASE_DIR / 'static'))
+app = Flask(__name__, static_folder=str(STATIC_DIR))
 
-# DB helpers - must be defined BEFORE importing routes to avoid circular imports
+# ── DB helpers ─────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -32,8 +44,7 @@ def init_db():
         role TEXT NOT NULL DEFAULT 'admin',
         active INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
+    )''')
     cur.execute('''
     CREATE TABLE IF NOT EXISTS colaboradores (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +52,7 @@ def init_db():
         role TEXT NOT NULL DEFAULT 'colaborador',
         active INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
+    )''')
     cur.execute('''
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,8 +73,7 @@ def init_db():
         banco_tipo TEXT,
         banco_pix TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
+    )''')
     cur.execute('''
     CREATE TABLE IF NOT EXISTS contratos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,8 +85,7 @@ def init_db():
         data_termino DATE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
-    )
-    ''')
+    )''')
     cur.execute('''
     CREATE TABLE IF NOT EXISTS pontos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,8 +104,7 @@ def init_db():
         status TEXT DEFAULT 'DISPONIVEL',
         proprietario_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
+    )''')
     cur.execute('''
     CREATE TABLE IF NOT EXISTS proprietarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,36 +125,31 @@ def init_db():
         banco_tipo TEXT,
         banco_pix TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
+    )''')
 
-    # Migration: add new columns if they don't exist (for existing databases)
+    # Migration: adiciona colunas novas em bancos ja existentes
     def _add_col(cur, table, col, col_type='TEXT'):
         try:
             cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {col_type}')
         except Exception:
-            pass  # Column already exists
+            pass  # Coluna ja existe
 
-    addr_cols = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
-    bank_cols = ['banco_nome', 'banco_agencia', 'banco_conta', 'banco_tipo', 'banco_pix']
-    ponto_addr = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
-
-    for col in addr_cols + bank_cols:
+    for col in ['cep','logradouro','numero','complemento','bairro','cidade','estado',
+                'banco_nome','banco_agencia','banco_conta','banco_tipo','banco_pix']:
         _add_col(cur, 'clientes', col)
         _add_col(cur, 'proprietarios', col)
-    for col in ponto_addr + ['endereco']:
+    for col in ['cep','logradouro','numero','complemento','bairro','cidade','estado','endereco']:
         _add_col(cur, 'pontos', col)
+
     conn.commit()
     conn.close()
 
-# Domain helpers
-
+# ── Domain helpers ─────────────────────────────────────────────
 def row_exists(table, row_id):
     conn = get_db()
     row = conn.execute(f'SELECT 1 FROM {table} WHERE id = ?', (row_id,)).fetchone()
     conn.close()
     return bool(row)
-
 
 def ponto_has_active_contract(ponto_id, ignore_contract_id=None):
     conn = get_db()
@@ -157,21 +159,25 @@ def ponto_has_active_contract(ponto_id, ignore_contract_id=None):
             (ponto_id, 'ATIVO', ignore_contract_id)
         ).fetchone()
     else:
-        row = conn.execute('SELECT 1 FROM contratos WHERE ponto_id = ? AND status = ?', (ponto_id, 'ATIVO')).fetchone()
+        row = conn.execute(
+            'SELECT 1 FROM contratos WHERE ponto_id = ? AND status = ?',
+            (ponto_id, 'ATIVO')
+        ).fetchone()
     conn.close()
     return bool(row)
 
-
 def update_ponto_status_from_contracts(ponto_id):
     conn = get_db()
-    active = conn.execute('SELECT 1 FROM contratos WHERE ponto_id = ? AND status = ?', (ponto_id, 'ATIVO')).fetchone()
+    active = conn.execute(
+        'SELECT 1 FROM contratos WHERE ponto_id = ? AND status = ?', (ponto_id, 'ATIVO')
+    ).fetchone()
     new_status = 'OCUPADO' if active else 'DISPONIVEL'
     conn.execute('UPDATE pontos SET status = ? WHERE id = ?', (new_status, ponto_id))
     conn.commit()
     conn.close()
     return new_status
 
-# Auth helpers
+# ── Auth ───────────────────────────────────────────────────────
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -186,7 +192,9 @@ def token_required(f):
             data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
             user_id = data.get('sub')
             conn = get_db()
-            user = conn.execute('SELECT id, email, role, active FROM users WHERE id = ?', (user_id,)).fetchone()
+            user = conn.execute(
+                'SELECT id, email, role, active FROM users WHERE id = ?', (user_id,)
+            ).fetchone()
             conn.close()
             if not user or not user['active']:
                 return jsonify({'error': 'User not found or inactive'}), 401
@@ -207,7 +215,10 @@ def register():
     cur = conn.cursor()
     try:
         pw_hash = generate_password_hash(password)
-        cur.execute('INSERT INTO users (email, password_hash, role, active) VALUES (?, ?, ?, ?)', (email, pw_hash, 'admin', 1))
+        cur.execute(
+            'INSERT INTO users (email, password_hash, role, active) VALUES (?, ?, ?, ?)',
+            (email, pw_hash, 'admin', 1)
+        )
         conn.commit()
         uid = cur.lastrowid
         return jsonify({'id': uid, 'email': email}), 200
@@ -224,24 +235,28 @@ def login():
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
     conn = get_db()
-    user = conn.execute('SELECT id, email, password_hash, role, active FROM users WHERE email = ?', (email,)).fetchone()
+    user = conn.execute(
+        'SELECT id, email, password_hash, role, active FROM users WHERE email = ?', (email,)
+    ).fetchone()
     conn.close()
-    if not user:
+    if not user or not check_password_hash(user['password_hash'], password):
         return jsonify({'error': 'Invalid credentials'}), 401
-    if not check_password_hash(user['password_hash'], password):
-        return jsonify({'error': 'Invalid credentials'}), 401
-    token = jwt.encode({'sub': user['id'], 'email': user['email'], 'role': user['role'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)}, JWT_SECRET, algorithm='HS256')
+    token = jwt.encode(
+        {'sub': user['id'], 'email': user['email'], 'role': user['role'],
+         'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)},
+        JWT_SECRET, algorithm='HS256'
+    )
     return jsonify({'token': token})
 
-# Collaborator endpoints
 @app.route('/api/collaborators', methods=['GET'])
 @token_required
 def list_collaborators():
     conn = get_db()
-    rows = conn.execute('SELECT id, email, role, active, created_at FROM colaboradores ORDER BY created_at DESC').fetchall()
+    rows = conn.execute(
+        'SELECT id, email, role, active, created_at FROM colaboradores ORDER BY created_at DESC'
+    ).fetchall()
     conn.close()
-    data = [dict(r) for r in rows]
-    return jsonify(data)
+    return jsonify([dict(r) for r in rows])
 
 @app.route('/api/collaborators', methods=['POST'])
 @token_required
@@ -254,10 +269,14 @@ def add_collaborator():
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute('INSERT INTO colaboradores (email, role, active) VALUES (?, ?, ?)', (email, role, 1))
+        cur.execute(
+            'INSERT INTO colaboradores (email, role, active) VALUES (?, ?, ?)', (email, role, 1)
+        )
         conn.commit()
         cid = cur.lastrowid
-        created = conn.execute('SELECT id, email, role, active, created_at FROM colaboradores WHERE id = ?', (cid,)).fetchone()
+        created = conn.execute(
+            'SELECT id, email, role, active, created_at FROM colaboradores WHERE id = ?', (cid,)
+        ).fetchone()
         return jsonify(dict(created))
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Colaborador already exists'}), 400
@@ -272,29 +291,42 @@ def toggle_collaborator_active(cid):
     conn = get_db()
     conn.execute('UPDATE colaboradores SET active = ? WHERE id = ?', (active, cid))
     conn.commit()
-    updated = conn.execute('SELECT id, email, role, active, created_at FROM colaboradores WHERE id = ?', (cid,)).fetchone()
+    updated = conn.execute(
+        'SELECT id, email, role, active, created_at FROM colaboradores WHERE id = ?', (cid,)
+    ).fetchone()
     conn.close()
     if not updated:
         return jsonify({'error': 'Not found'}), 404
     return jsonify(dict(updated))
 
-# Serve static (optional)
+# ── Serve frontend ─────────────────────────────────────────────
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
-    static_dir = app.static_folder
-    if path and (Path(static_dir) / path).exists():
-        return send_from_directory(static_dir, path)
-    index = Path(static_dir) / 'index.html'
+    static_dir = Path(app.static_folder)
+    if path and (static_dir / path).exists():
+        return send_from_directory(str(static_dir), path)
+    index = static_dir / 'index.html'
     if index.exists():
-        return send_from_directory(static_dir, 'index.html')
-    return jsonify({'status': 'Flask server running'})
+        return send_from_directory(str(static_dir), 'index.html')
+    return jsonify({
+        'status': 'frontend nao encontrado',
+        'static_folder': str(static_dir),
+        'index_exists': str(index.exists()),
+        'frozen': str(getattr(sys, 'frozen', False))
+    })
 
-# Register API blueprints (must be done AFTER utility functions are defined to avoid circular imports)
-from .routes.clients import bp as clients_bp
-from .routes.contracts import bp as contracts_bp
-from .routes.pontos import bp as pontos_bp
-from .routes.proprietarios import bp as proprietarios_bp
+# ── Blueprints ─────────────────────────────────────────────────
+try:
+    from .routes.clients import bp as clients_bp
+    from .routes.contracts import bp as contracts_bp
+    from .routes.pontos import bp as pontos_bp
+    from .routes.proprietarios import bp as proprietarios_bp
+except ImportError:
+    from server.routes.clients import bp as clients_bp
+    from server.routes.contracts import bp as contracts_bp
+    from server.routes.pontos import bp as pontos_bp
+    from server.routes.proprietarios import bp as proprietarios_bp
 
 app.register_blueprint(clients_bp, url_prefix='/api/clients')
 app.register_blueprint(contracts_bp, url_prefix='/api/contracts')

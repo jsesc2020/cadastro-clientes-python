@@ -12,8 +12,7 @@ if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
     if (Test-Path $nsisPath) {
         Set-Alias -Name makensis -Value $nsisPath
     } else {
-        Write-Warning "NSIS nao encontrado. Pulando build do instalador."
-        exit 0
+        Write-Warning "NSIS nao encontrado. Pulando build do instalador NSIS."
     }
 }
 
@@ -28,8 +27,6 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 Write-Host 'Gerando executavel com PyInstaller...'
-# IMPORTANTE: --add-data "server/static;server/static" preserva o caminho
-# para que app.py encontre os arquivos em _MEIPASS/server/static
 pyinstaller --onefile `
     --name app `
     --add-data "server/static;server/static" `
@@ -67,18 +64,16 @@ Write-Host 'Executavel gerado: dist\app.exe'
 $installerOutputDir = Join-Path (Join-Path (Get-Location) "dist") "installer"
 New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
 
-Write-Host 'Gerando instalador NSIS...'
-if (-not (Test-Path installer\windows_installer.nsi)) {
-    throw 'Script NSIS nao encontrado: installer\windows_installer.nsi'
-}
-& makensis installer\windows_installer.nsi
-
-if ($LASTEXITCODE -ne 0) {
-    if (Test-Path "$installerOutputDir\CadastroClientesInstaller.exe") {
-        Write-Host "Instalador criado com avisos."
+if (Get-Command makensis -ErrorAction SilentlyContinue) {
+    Write-Host 'Gerando instalador NSIS...'
+    if (Test-Path installer\windows_installer.nsi) {
+        & makensis installer\windows_installer.nsi
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "NSIS retornou codigo $LASTEXITCODE"
+        }
     } else {
-        throw "NSIS falhou e o instalador nao foi criado."
+        Write-Warning "Script NSIS nao encontrado. Pulando."
     }
 }
 
-Write-Host 'Build completo!'
+Write-Host 'Build concluido!'

@@ -3,7 +3,10 @@ from ..app import get_db, token_required, row_exists
 
 bp = Blueprint('clients', __name__)
 
-_FIELDS = 'id, nome, documento, telefone, email, cep, logradouro, numero, complemento, bairro, cidade, estado, banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix, created_at'
+_FIELDS = '''id, nome, documento, telefone, email,
+    cep, logradouro, numero, complemento, bairro, cidade, estado,
+    banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix,
+    created_at'''
 
 @bp.route('/', methods=['GET'])
 @token_required
@@ -23,7 +26,8 @@ def add_client():
     conn = get_db()
     cur = conn.cursor()
     cur.execute('''INSERT INTO clientes
-        (nome, documento, telefone, email, cep, logradouro, numero, complemento, bairro, cidade, estado,
+        (nome, documento, telefone, email,
+         cep, logradouro, numero, complemento, bairro, cidade, estado,
          banco_nome, banco_agencia, banco_conta, banco_tipo, banco_pix)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (nome, data.get('documento'), data.get('telefone'), data.get('email'),
