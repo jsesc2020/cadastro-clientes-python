@@ -1,5 +1,4 @@
 import os
-import sys
 import sqlite3
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -8,26 +7,13 @@ import datetime
 from functools import wraps
 from pathlib import Path
 
-# Detecta se esta rodando como executavel PyInstaller (.exe) ou como script normal
-if getattr(sys, 'frozen', False):
-    # Modo executavel: arquivos estaticos ficam em _MEIPASS/server/static
-    # Banco de dados fica junto ao .exe (diretorio do executavel)
-    _EXE_DIR = Path(sys.executable).parent
-    _BUNDLE_DIR = Path(sys._MEIPASS)
-    BASE_DIR = _BUNDLE_DIR
-    DATA_DIR = _EXE_DIR / 'data'
-    STATIC_DIR = _BUNDLE_DIR / 'server' / 'static'
-else:
-    # Modo script normal
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    DATA_DIR = BASE_DIR / 'data'
-    STATIC_DIR = BASE_DIR / 'static'
-
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / 'data'
+DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / 'app.sqlite3'
 JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
 
-app = Flask(__name__, static_folder=str(STATIC_DIR))
+app = Flask(__name__, static_folder=str(BASE_DIR / 'static'))
 
 # DB helpers - must be defined BEFORE importing routes to avoid circular imports
 def get_db():
@@ -64,6 +50,18 @@ def init_db():
         documento TEXT,
         telefone TEXT,
         email TEXT,
+        cep TEXT,
+        logradouro TEXT,
+        numero TEXT,
+        complemento TEXT,
+        bairro TEXT,
+        cidade TEXT,
+        estado TEXT,
+        banco_nome TEXT,
+        banco_agencia TEXT,
+        banco_conta TEXT,
+        banco_tipo TEXT,
+        banco_pix TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
@@ -85,7 +83,13 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
         tipo TEXT NOT NULL DEFAULT 'OUTDOOR',
-        endereco TEXT,
+        cep TEXT,
+        logradouro TEXT,
+        numero TEXT,
+        complemento TEXT,
+        bairro TEXT,
+        cidade TEXT,
+        estado TEXT,
         latitude REAL,
         longitude REAL,
         status TEXT DEFAULT 'DISPONIVEL',
@@ -100,9 +104,38 @@ def init_db():
         documento TEXT,
         telefone TEXT,
         email TEXT,
+        cep TEXT,
+        logradouro TEXT,
+        numero TEXT,
+        complemento TEXT,
+        bairro TEXT,
+        cidade TEXT,
+        estado TEXT,
+        banco_nome TEXT,
+        banco_agencia TEXT,
+        banco_conta TEXT,
+        banco_tipo TEXT,
+        banco_pix TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+
+    # Migration: add new columns if they don't exist (for existing databases)
+    def _add_col(cur, table, col, col_type='TEXT'):
+        try:
+            cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {col_type}')
+        except Exception:
+            pass  # Column already exists
+
+    addr_cols = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
+    bank_cols = ['banco_nome', 'banco_agencia', 'banco_conta', 'banco_tipo', 'banco_pix']
+    ponto_addr = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
+
+    for col in addr_cols + bank_cols:
+        _add_col(cur, 'clientes', col)
+        _add_col(cur, 'proprietarios', col)
+    for col in ponto_addr:
+        _add_col(cur, 'pontos', col)
     conn.commit()
     conn.close()
 
@@ -244,25 +277,17 @@ def toggle_collaborator_active(cid):
         return jsonify({'error': 'Not found'}), 404
     return jsonify(dict(updated))
 
-# Serve frontend (SPA)
+# Serve static (optional)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
-    static_dir = Path(app.static_folder)
-    # Serve arquivo especifico se existir
-    if path and (static_dir / path).exists():
-        return send_from_directory(str(static_dir), path)
-    # Retorna index.html para rotas do SPA
-    index = static_dir / 'index.html'
+    static_dir = app.static_folder
+    if path and (Path(static_dir) / path).exists():
+        return send_from_directory(static_dir, path)
+    index = Path(static_dir) / 'index.html'
     if index.exists():
-        return send_from_directory(str(static_dir), 'index.html')
-    # Fallback de debug: mostra onde o app esta procurando
-    return jsonify({
-        'status': 'frontend nao encontrado',
-        'static_folder': str(static_dir),
-        'index_exists': str(index.exists()),
-        'frozen': str(getattr(sys, 'frozen', False))
-    })
+        return send_from_directory(static_dir, 'index.html')
+    return jsonify({'status': 'Flask server running'})
 
 # Register API blueprints (must be done AFTER utility functions are defined to avoid circular imports)
 from .routes.clients import bp as clients_bp
