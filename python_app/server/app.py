@@ -90,6 +90,7 @@ def init_db():
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
+        endereco TEXT,
         latitude REAL,
         longitude REAL,
         status TEXT DEFAULT 'DISPONIVEL',
@@ -134,7 +135,7 @@ def init_db():
     for col in addr_cols + bank_cols:
         _add_col(cur, 'clientes', col)
         _add_col(cur, 'proprietarios', col)
-    for col in ponto_addr:
+    for col in ponto_addr + ['endereco']:
         _add_col(cur, 'pontos', col)
     conn.commit()
     conn.close()
