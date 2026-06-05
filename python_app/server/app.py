@@ -1,6 +1,8 @@
 import os
 import sys
 import sqlite3
+import urllib.request
+import json as _json
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -366,6 +368,33 @@ def resumo_financeiro():
         'mes': mes or 'todos',
     }
     conn.close(); return jsonify(resultado)
+
+# ── Proxy CNPJ (BrasilAPI) ────────────────────────────────────
+# Proxy interno evita bloqueio CORS/TLS quando rodando como .exe
+@app.route('/api/util/cnpj/<cnpj>', methods=['GET'])
+@token_required
+def proxy_cnpj(cnpj):
+    cnpj_digits = ''.join(c for c in cnpj if c.isdigit())
+    if len(cnpj_digits) != 14:
+        return jsonify({'error': 'CNPJ deve ter 14 digitos'}), 400
+    url = f'https://brasilapi.com.br/api/cnpj/v1/{cnpj_digits}'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'MidiaControl/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        # Normaliza telefone: remove DDD duplicado se necessário
+        tel_raw = data.get('ddd_telefone_1', '')
+        if tel_raw:
+            digits = ''.join(c for c in tel_raw if c.isdigit())
+            if len(digits) >= 10:
+                data['telefone'] = f'({digits[:2]}) {digits[2:]}'
+            else:
+                data['telefone'] = tel_raw
+        return jsonify(data)
+    except urllib.error.HTTPError as e:
+        return jsonify({'error': f'CNPJ nao encontrado (HTTP {e.code})'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Erro ao consultar CNPJ: {str(e)}'}), 502
 
 # ── Frontend ───────────────────────────────────────────────────
 @app.route('/', defaults={'path': ''})

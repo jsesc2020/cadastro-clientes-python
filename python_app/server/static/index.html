@@ -177,25 +177,34 @@ async function api(method, path, body) {
 async function buscarCNPJ(prefix) {
   const el = document.getElementById(prefix+'documento');
   const st = document.getElementById(prefix+'cnpj-status');
-  const cnpj = el.value.replace(/\D/g,'');
-  if (cnpj.length !== 14) { st.textContent='CNPJ inválido (14 dígitos)'; st.style.color='var(--danger)'; return; }
+  const cnpj = (el?.value||'').replace(/\D/g,'');
+  if (cnpj.length !== 14) { st.textContent='CNPJ inválido — informe os 14 dígitos'; st.style.color='var(--danger)'; return; }
   st.innerHTML='<span class="spinner spinner-sm"></span> Buscando...'; st.style.color='var(--text3)';
   try {
-    const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
-    if (!r.ok) throw new Error('CNPJ não encontrado');
+    // Usa proxy interno para evitar bloqueio CORS/TLS no executável Windows
+    const r = await fetch('/api/util/cnpj/'+cnpj);
+    if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error||'CNPJ não encontrado'); }
     const d = await r.json();
-    document.getElementById(prefix+'nome').value = d.razao_social||d.nome_fantasia||'';
-    document.getElementById(prefix+'email').value = d.email||'';
-    document.getElementById(prefix+'telefone').value = d.ddd_telefone_1 ? '('+d.ddd_telefone_1.slice(0,2)+') '+d.ddd_telefone_1.slice(2) : '';
-    document.getElementById(prefix+'cep').value = d.cep ? d.cep.replace(/\D/g,'').replace(/(\d{5})(\d{3})/,'$1-$2') : '';
-    document.getElementById(prefix+'logradouro').value = (d.logradouro||'') + (d.complemento ? ', '+d.complemento : '');
-    document.getElementById(prefix+'numero').value = d.numero||'';
-    document.getElementById(prefix+'bairro').value = d.bairro||'';
-    document.getElementById(prefix+'cidade').value = d.municipio||'';
-    document.getElementById(prefix+'estado').value = d.uf||'';
-    document.getElementById(prefix+'tipo_pessoa').value = 'PJ';
-    st.textContent = '✓ Dados preenchidos: '+d.razao_social; st.style.color='var(--success)';
-  } catch(e) { st.textContent=e.message; st.style.color='var(--danger)'; }
+    // Campos de dados principais (IDs com sufixo -tel e -email)
+    const setVal = (id, val) => { const e=document.getElementById(id); if(e&&val) e.value=val; };
+    setVal(prefix+'nome',      d.razao_social||d.nome_fantasia||'');
+    // Tenta os dois padrões de ID para telefone e email
+    const telId  = document.getElementById(prefix+'tel')   ? prefix+'tel'   : prefix+'telefone';
+    const mailId = document.getElementById(prefix+'email') ? prefix+'email' : prefix+'email';
+    setVal(telId,  d.telefone||'');
+    setVal(mailId, d.email||'');
+    setVal(prefix+'cep',        d.cep ? d.cep.replace(/\D/g,'').replace(/(\d{5})(\d{3})/,'$1-$2') : '');
+    setVal(prefix+'logradouro', d.logradouro||'');
+    setVal(prefix+'numero',     d.numero||'');
+    setVal(prefix+'complemento',d.complemento||'');
+    setVal(prefix+'bairro',     d.bairro||'');
+    setVal(prefix+'cidade',     d.municipio||d.cidade||'');
+    setVal(prefix+'estado',     d.uf||'');
+    const tpEl = document.getElementById(prefix+'tipo_pessoa');
+    if (tpEl) tpEl.value = 'PJ';
+    st.textContent = '✓ '+(d.razao_social||d.nome_fantasia||'Dados preenchidos');
+    st.style.color = 'var(--success)';
+  } catch(e) { st.textContent = '✗ '+e.message; st.style.color='var(--danger)'; }
 }
 
 // ── CEP lookup ───────────────────────────────────────────────
