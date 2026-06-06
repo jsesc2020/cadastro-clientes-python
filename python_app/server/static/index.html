@@ -158,9 +158,26 @@ tr:hover td{background:rgba(255,255,255,.013)}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── STATE ────────────────────────────────────────────────────
-let TOKEN = localStorage.getItem('mc_token')||'';
-let USER_EMAIL = localStorage.getItem('mc_email')||'';
+let TOKEN = '';
+let USER_EMAIL = '';
 let _map = null, _mapMarker = null;
+
+// Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
+// Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('boot') === '1') {
+    // Nova execucao do .exe: apaga credenciais da sessao anterior
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    // Remove o parametro da URL sem recarregar
+    window.history.replaceState({}, '', '/');
+  } else {
+    // Recarregamento normal: restaura sessao se existir
+    TOKEN = sessionStorage.getItem('mc_token') || '';
+    USER_EMAIL = sessionStorage.getItem('mc_email') || '';
+  }
+})();
 
 // ── API ──────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -169,6 +186,18 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch('/api'+path, opts);
   const data = await r.json().catch(()=>({}));
+  // Token invalido, expirado ou usuario inativo: logout automatico silencioso
+  if (r.status === 401) {
+    TOKEN = ''; USER_EMAIL = '';
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('auth-alert').innerHTML =
+      '<div class="alert alert-error">Sessão expirada. Faça login novamente.</div>';
+    setTimeout(()=>{ const el=document.getElementById('auth-alert'); if(el) el.innerHTML=''; }, 5000);
+    throw new Error('session_expired');
+  }
   if (!r.ok) throw new Error(data.error||r.statusText);
   return data;
 }
@@ -378,12 +407,12 @@ async function doAuth(){
     if(authMode==='register'){await api('POST','/auth/register',{email,password:pwd});showAlert(alertEl,'Conta criada! Faça login.','success');switchTab('login');return}
     const data=await api('POST','/auth/login',{email,password:pwd});
     TOKEN=data.token; USER_EMAIL=email;
-    localStorage.setItem('mc_token',TOKEN); localStorage.setItem('mc_email',email);
+    sessionStorage.setItem('mc_token',TOKEN); sessionStorage.setItem('mc_email',email);
     startApp();
   }catch(e){showAlert(alertEl,e.message,'error')}
 }
 function showAlert(el,msg,type){el.innerHTML=`<div class="alert alert-${type}">${msg}</div>`;setTimeout(()=>el.innerHTML='',5000)}
-function logout(){TOKEN='';USER_EMAIL='';localStorage.removeItem('mc_token');localStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
+function logout(){TOKEN='';USER_EMAIL='';sessionStorage.removeItem('mc_token');sessionStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
 function startApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';document.getElementById('sidebar-user').textContent=USER_EMAIL;navigate('dashboard')}
 if(TOKEN) startApp();
 
@@ -413,7 +442,7 @@ async function renderDashboard(){
         <div class="resumo-card"><div class="resumo-label">Saídas (Repasses)</div><div class="resumo-value stat-red">${fmt(resumo.saidas_total)}</div></div>
         <div class="resumo-card"><div class="resumo-label">Saldo Previsto</div><div class="resumo-value ${resumo.saldo_previsto>=0?'stat-green':'stat-red'}">${fmt(resumo.saldo_previsto)}</div></div>
       </div>`;
-  }catch(e){document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message}</div>`}
+  }catch(e){if(e.message!=='session_expired')document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message}</div>`}
 }
 
 // ── CLIENTES ──────────────────────────────────────────────────
