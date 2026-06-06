@@ -181,8 +181,10 @@ async function buscarCNPJ(prefix) {
   if (cnpj.length !== 14) { st.textContent='CNPJ inválido — informe os 14 dígitos'; st.style.color='var(--danger)'; return; }
   st.innerHTML='<span class="spinner spinner-sm"></span> Buscando...'; st.style.color='var(--text3)';
   try {
-    // Usa função api() que já inclui o header Authorization automaticamente
-    const d = await api('GET', '/util/cnpj/'+cnpj);
+    // Usa proxy interno para evitar bloqueio CORS/TLS no executável Windows
+    const r = await fetch('/api/util/cnpj/'+cnpj);
+    if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error||'CNPJ não encontrado'); }
+    const d = await r.json();
     // Campos de dados principais (IDs com sufixo -tel e -email)
     const setVal = (id, val) => { const e=document.getElementById(id); if(e&&val) e.value=val; };
     setVal(prefix+'nome',      d.razao_social||d.nome_fantasia||'');
