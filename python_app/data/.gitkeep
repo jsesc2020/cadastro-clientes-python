@@ -1,0 +1,2 @@
+# This directory is created by the app on first run via init_db()
+# The .gitkeep file ensures the directory is tracked by git.
