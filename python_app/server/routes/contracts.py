@@ -212,10 +212,10 @@ def cancel_contract(cid):
 def renew_contract(cid):
     d = request.get_json() or {}
     num_parcelas = int(d.get('num_parcelas') or 1)
-    data_inicio  = d.get('data_inicio')
+    data_inicio  = d.get('data_inicio')  # opcional: se nao informado, usa o do contrato
     data_termino = d.get('data_termino')
-    if not data_inicio:
-        return jsonify({'error': 'data_inicio obrigatoria para renovacao'}), 400
+    if not data_termino:
+        return jsonify({'error': 'data_termino obrigatoria para renovacao'}), 400
     conn = get_db()
     row = conn.execute('SELECT ponto_id FROM contratos WHERE id=?',(cid,)).fetchone()
     if not row: conn.close(); return jsonify({'error':'Not found'}),404
@@ -223,7 +223,8 @@ def renew_contract(cid):
         conn.close(); return jsonify({'error':'Ponto ja possui contrato ativo'}),400
     conn.execute('''UPDATE contratos SET
         status='ATIVO', num_parcelas=?,
-        data_inicio=?, data_termino=COALESCE(?,data_termino)
+        data_inicio=COALESCE(?,data_inicio),
+        data_termino=COALESCE(?,data_termino)
         WHERE id=?''', (num_parcelas, data_inicio, data_termino, cid))
     conn.commit()
     _gerar_parcelas(cid, conn)

@@ -99,7 +99,6 @@ def test_contract_status_and_point_conflicts(client):
 
     # Segundo contrato no mesmo ponto deve falhar (conflito)
     rv = client.post('/api/contracts/', json={'cliente_id': cid, 'ponto_id': pid, 'valor_cents': 8000, 'data_inicio': '2026-06-15', 'data_termino': '2026-06-20'}, headers={'Authorization': f'Bearer {token}'})
-    assert rv.status_code == 400
     assert rv.status_code == 400  # Ponto ja possui contrato ativo
 
     # Cancela o contrato
@@ -107,7 +106,7 @@ def test_contract_status_and_point_conflicts(client):
     assert rv.status_code == 200
     assert rv.get_json()['status'] == 'CANCELADO'
 
-    # Renova o contrato
-    rv = client.post(f'/api/contracts/{contract_id}/renew', json={'data_termino': '2026-07-31'}, headers={'Authorization': f'Bearer {token}'})
-    assert rv.status_code == 200
+    # Renova o contrato (data_inicio opcional - usa a do contrato existente)
+    rv = client.post(f'/api/contracts/{contract_id}/renew', json={'data_termino': '2026-07-31', 'num_parcelas': 1}, headers={'Authorization': f'Bearer {token}'})
+    assert rv.status_code == 200, f"Renew falhou: {rv.get_json()}"
     assert rv.get_json()['status'] == 'ATIVO'
