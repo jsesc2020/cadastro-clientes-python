@@ -442,7 +442,11 @@ async function renderDashboard(){
         <div class="resumo-card"><div class="resumo-label">Saídas (Repasses)</div><div class="resumo-value stat-red">${fmt(resumo.saidas_total)}</div></div>
         <div class="resumo-card"><div class="resumo-label">Saldo Previsto</div><div class="resumo-value ${resumo.saldo_previsto>=0?'stat-green':'stat-red'}">${fmt(resumo.saldo_previsto)}</div></div>
       </div>`;
+<<<<<<< HEAD
   }catch(e){if(e.message!=='session_expired')document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`}
+=======
+  }catch(e){if(e.message!=='session_expired')document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message}</div>`}
+>>>>>>> 13548571def8ea9dac9aab6fd0f75ec8f6c086c3
 }
 
 // ── CLIENTES ──────────────────────────────────────────────────

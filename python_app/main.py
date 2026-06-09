@@ -2,7 +2,6 @@ import sys
 import os
 from pathlib import Path
 
-# Corrige diretorio de trabalho para junto do .exe
 if getattr(sys, 'frozen', False):
     os.chdir(Path(sys.executable).parent)
 
@@ -15,7 +14,8 @@ PORT = int(os.environ.get('PORT', 5000))
 def open_browser():
     import time
     time.sleep(1.5)
-    webbrowser.open(f'http://localhost:{PORT}')
+    # Abre com parametro ?boot=1 para que o frontend limpe sessao ao iniciar
+    webbrowser.open(f'http://localhost:{PORT}/?boot=1')
 
 if __name__ == '__main__':
     init_db()
