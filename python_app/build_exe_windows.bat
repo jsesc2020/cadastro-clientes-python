@@ -8,6 +8,7 @@ pip install pyinstaller
 echo [build_exe_windows] Gerando executavel...
 pyinstaller --onefile ^
     --name app ^
+    --noconsole ^
     --add-data "server/static;server/static" ^
     --hidden-import flask ^
     --hidden-import flask.json ^

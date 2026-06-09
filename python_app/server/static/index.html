@@ -162,6 +162,22 @@ let TOKEN = '';
 let USER_EMAIL = '';
 let _map = null, _mapMarker = null;
 
+// ── PING: mantém o servidor informado que o navegador está aberto ──
+// O backend encerra o processo se não receber ping por 30s
+setInterval(async () => {
+  if (TOKEN) {
+    try { await fetch('/api/ping'); } catch(e) {}
+  }
+}, 10000); // a cada 10 segundos
+
+// ── Limpa sessão ao fechar/sair da aba ────────────────────────
+window.addEventListener('beforeunload', () => {
+  sessionStorage.removeItem('mc_token');
+  sessionStorage.removeItem('mc_email');
+  // Envia ping de saída de forma sincrona (best-effort)
+  try { navigator.sendBeacon('/api/ping'); } catch(e) {}
+});
+
 // Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
 // Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
 (function() {
@@ -270,20 +286,20 @@ async function geocodificarEndereco(prefix) {
   const cid = document.getElementById(prefix+'cidade')?.value||'';
   const est = document.getElementById(prefix+'estado')?.value||'';
   if (!log || !cid) return;
-  const q = encodeURIComponent(`${log} ${num}, ${cid}, ${est}, Brasil`);
+  // Proxy backend: evita bloqueio TLS/CORS no executavel Windows
+  const q = `${log} ${num}, ${cid}, ${est}, Brasil`;
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`,
-      {headers:{'Accept-Language':'pt-BR'}});
-    const data = await r.json();
-    if (data.length) {
-      const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+    const data = await api('GET', `/util/geocode?q=${encodeURIComponent(q)}`);
+    if (Array.isArray(data) && data.length) {
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
       const latEl = document.getElementById(prefix+'lat');
       const lngEl = document.getElementById(prefix+'lng');
-      if (latEl) latEl.value = lat.toFixed(6);
-      if (lngEl) lngEl.value = lng.toFixed(6);
+      if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
+      if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
       atualizarMapa(lat, lng);
     }
-  } catch(e) { console.warn('Geocodificação falhou:', e); }
+  } catch(e) { console.warn('Geocodificação falhou:', e.message); }
 }
 
 // ── Mapa Leaflet ──────────────────────────────────────────────
@@ -304,8 +320,9 @@ function initMap(lat, lng) {
       atualizarMapa(lat, lng);
       const latEl = document.getElementById('p-lat');
       const lngEl = document.getElementById('p-lng');
-      if (latEl) latEl.value = lat.toFixed(6);
-      if (lngEl) lngEl.value = lng.toFixed(6);
+      // Força notacao com ponto decimal independente do locale do OS
+      if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
+      if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
     });
   }, 100);
 }
@@ -1279,6 +1296,22 @@ let TOKEN = '';
 let USER_EMAIL = '';
 let _map = null, _mapMarker = null;
 
+// ── PING: mantém o servidor informado que o navegador está aberto ──
+// O backend encerra o processo se não receber ping por 30s
+setInterval(async () => {
+  if (TOKEN) {
+    try { await fetch('/api/ping'); } catch(e) {}
+  }
+}, 10000); // a cada 10 segundos
+
+// ── Limpa sessão ao fechar/sair da aba ────────────────────────
+window.addEventListener('beforeunload', () => {
+  sessionStorage.removeItem('mc_token');
+  sessionStorage.removeItem('mc_email');
+  // Envia ping de saída de forma sincrona (best-effort)
+  try { navigator.sendBeacon('/api/ping'); } catch(e) {}
+});
+
 // Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
 // Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
 (function() {
@@ -1421,8 +1454,9 @@ function initMap(lat, lng) {
       atualizarMapa(lat, lng);
       const latEl = document.getElementById('p-lat');
       const lngEl = document.getElementById('p-lng');
-      if (latEl) latEl.value = lat.toFixed(6);
-      if (lngEl) lngEl.value = lng.toFixed(6);
+      // Força notacao com ponto decimal independente do locale do OS
+      if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
+      if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
     });
   }, 100);
 }

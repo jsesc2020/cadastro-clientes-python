@@ -2,6 +2,7 @@ import os
 import sys
 import sqlite3
 import urllib.request
+import urllib.parse
 import json as _json
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -342,6 +343,25 @@ def delete_lancamento(lid):
     conn.execute("UPDATE parcelas SET status='CANCELADO' WHERE id=?", (lid,))
     conn.commit(); conn.close()
     return jsonify({'deleted': lid})
+
+# ── Proxy Nominatim (geocodificação) ─────────────────────────
+@app.route('/api/util/geocode', methods=['GET'])
+@token_required
+def proxy_geocode():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'error': 'q required'}), 400
+    url = f'https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(q)}&limit=1'
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'MidiaControl/1.0',
+            'Accept-Language': 'pt-BR'
+        })
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
 
 # ── Proxy CNPJ (BrasilAPI) ────────────────────────────────────
 # Proxy interno evita bloqueio CORS/TLS quando rodando como .exe
