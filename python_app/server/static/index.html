@@ -158,9 +158,26 @@ tr:hover td{background:rgba(255,255,255,.013)}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── STATE ────────────────────────────────────────────────────
-let TOKEN = localStorage.getItem('mc_token')||'';
-let USER_EMAIL = localStorage.getItem('mc_email')||'';
+let TOKEN = '';
+let USER_EMAIL = '';
 let _map = null, _mapMarker = null;
+
+// Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
+// Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('boot') === '1') {
+    // Nova execucao do .exe: apaga credenciais da sessao anterior
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    // Remove o parametro da URL sem recarregar
+    window.history.replaceState({}, '', '/');
+  } else {
+    // Recarregamento normal: restaura sessao se existir
+    TOKEN = sessionStorage.getItem('mc_token') || '';
+    USER_EMAIL = sessionStorage.getItem('mc_email') || '';
+  }
+})();
 
 // ── API ──────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -169,6 +186,18 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch('/api'+path, opts);
   const data = await r.json().catch(()=>({}));
+  // Token invalido, expirado ou usuario inativo: logout automatico silencioso
+  if (r.status === 401) {
+    TOKEN = ''; USER_EMAIL = '';
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('auth-alert').innerHTML =
+      '<div class="alert alert-error">Sessão expirada. Faça login novamente.</div>';
+    setTimeout(()=>{ const el=document.getElementById('auth-alert'); if(el) el.innerHTML=''; }, 5000);
+    throw new Error('session_expired');
+  }
   if (!r.ok) throw new Error(data.error||r.statusText);
   return data;
 }
@@ -181,10 +210,8 @@ async function buscarCNPJ(prefix) {
   if (cnpj.length !== 14) { st.textContent='CNPJ inválido — informe os 14 dígitos'; st.style.color='var(--danger)'; return; }
   st.innerHTML='<span class="spinner spinner-sm"></span> Buscando...'; st.style.color='var(--text3)';
   try {
-    // Usa proxy interno para evitar bloqueio CORS/TLS no executável Windows
-    const r = await fetch('/api/util/cnpj/'+cnpj);
-    if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error||'CNPJ não encontrado'); }
-    const d = await r.json();
+    // Usa função api() que já inclui o header Authorization automaticamente
+    const d = await api('GET', '/util/cnpj/'+cnpj);
     // Campos de dados principais (IDs com sufixo -tel e -email)
     const setVal = (id, val) => { const e=document.getElementById(id); if(e&&val) e.value=val; };
     setVal(prefix+'nome',      d.razao_social||d.nome_fantasia||'');
@@ -380,12 +407,12 @@ async function doAuth(){
     if(authMode==='register'){await api('POST','/auth/register',{email,password:pwd});showAlert(alertEl,'Conta criada! Faça login.','success');switchTab('login');return}
     const data=await api('POST','/auth/login',{email,password:pwd});
     TOKEN=data.token; USER_EMAIL=email;
-    localStorage.setItem('mc_token',TOKEN); localStorage.setItem('mc_email',email);
+    sessionStorage.setItem('mc_token',TOKEN); sessionStorage.setItem('mc_email',email);
     startApp();
   }catch(e){showAlert(alertEl,e.message,'error')}
 }
 function showAlert(el,msg,type){el.innerHTML=`<div class="alert alert-${type}">${msg}</div>`;setTimeout(()=>el.innerHTML='',5000)}
-function logout(){TOKEN='';USER_EMAIL='';localStorage.removeItem('mc_token');localStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
+function logout(){TOKEN='';USER_EMAIL='';sessionStorage.removeItem('mc_token');sessionStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
 function startApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';document.getElementById('sidebar-user').textContent=USER_EMAIL;navigate('dashboard')}
 if(TOKEN) startApp();
 
@@ -415,7 +442,7 @@ async function renderDashboard(){
         <div class="resumo-card"><div class="resumo-label">Saídas (Repasses)</div><div class="resumo-value stat-red">${fmt(resumo.saidas_total)}</div></div>
         <div class="resumo-card"><div class="resumo-label">Saldo Previsto</div><div class="resumo-value ${resumo.saldo_previsto>=0?'stat-green':'stat-red'}">${fmt(resumo.saldo_previsto)}</div></div>
       </div>`;
-  }catch(e){document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message}</div>`}
+  }catch(e){if(e.message!=='session_expired')document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`}
 }
 
 // ── CLIENTES ──────────────────────────────────────────────────
@@ -530,8 +557,8 @@ function openPontoModal(p){
     </div>
     <div class="section-title">🗺️ Mapa — clique para posicionar</div>
     <div class="form-row">
-      <div class="form-group"><label>Latitude</label><input id="p-lat" type="number" step="0.000001" value="${lat||''}" onchange="atualizarMapaManual()"/></div>
-      <div class="form-group"><label>Longitude</label><input id="p-lng" type="number" step="0.000001" value="${lng||''}" onchange="atualizarMapaManual()"/></div>
+      <div class="form-group"><label>Latitude</label><input id="p-lat" type="text" inputmode="decimal" placeholder="-21.123456" value="${lat||''}" onchange="atualizarMapaManual()"/></div>
+      <div class="form-group"><label>Longitude</label><input id="p-lng" type="text" inputmode="decimal" placeholder="-48.123456" value="${lng||''}" onchange="atualizarMapaManual()"/></div>
     </div>
     <div id="map"></div>
   `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -540,78 +567,133 @@ function openPontoModal(p){
 }
 
 function atualizarMapaManual(){
-  const lat=parseFloat(document.getElementById('p-lat')?.value);
-  const lng=parseFloat(document.getElementById('p-lng')?.value);
+  const lat=parseCoord(document.getElementById('p-lat')?.value);
+  const lng=parseCoord(document.getElementById('p-lng')?.value);
   if(!isNaN(lat)&&!isNaN(lng)) atualizarMapa(lat,lng);
 }
 
+function parseCoord(val){
+  // Aceita tanto ponto quanto virgula como separador decimal (pt-BR)
+  if(!val && val!==0) return NaN;
+  return parseFloat(String(val).replace(',','.'));
+}
 async function savePonto(id){
-  const body={nome:v('p-nome'),tipo:v('p-tipo'),status:v('p-status'),latitude:parseFloat(document.getElementById('p-lat').value),longitude:parseFloat(document.getElementById('p-lng').value),cep:v('p-cep'),logradouro:v('p-logradouro'),numero:v('p-numero'),complemento:v('p-complemento'),bairro:v('p-bairro'),cidade:v('p-cidade'),estado:v('p-estado')};
+  const body={nome:v('p-nome'),tipo:v('p-tipo'),status:v('p-status'),
+    latitude:parseCoord(document.getElementById('p-lat').value),
+    longitude:parseCoord(document.getElementById('p-lng').value),
+    cep:v('p-cep'),logradouro:v('p-logradouro'),numero:v('p-numero'),
+    complemento:v('p-complemento'),bairro:v('p-bairro'),cidade:v('p-cidade'),estado:v('p-estado')};
   if(!body.nome||isNaN(body.latitude)||isNaN(body.longitude)){alert('Nome, latitude e longitude são obrigatórios');return}
   try{if(id)await api('PUT',`/pontos/${id}`,body);else await api('POST','/pontos/',body);closeModal();renderPontos()}catch(e){alert(e.message)}
 }
 async function deletePonto(id){if(!confirm('Excluir este ponto?'))return;await api('DELETE',`/pontos/${id}`).catch(e=>alert(e.message));renderPontos()}
 
-// ── CONTRATOS ─────────────────────────────────────────────────
+// ── CONTRATOS ─────────────────────────────────────────────
 async function renderContratos(){
   document.getElementById('main-content').innerHTML=`
-    <div class="page-header"><div><div class="page-title">Contratos</div><div class="page-sub">Locações com repasse ao proprietário</div></div>
-    <button class="btn btn-primary" onclick="openContratoModal()">+ Novo Contrato</button></div>
+    <div class="page-header">
+      <div><div class="page-title">Contratos</div><div class="page-sub">Locações com parcelas automáticas</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="openConfigModal()">⚙ Configurações</button>
+        <button class="btn btn-primary" onclick="openContratoModal()">+ Novo Contrato</button>
+      </div>
+    </div>
     <div class="card"><div class="card-header"><span class="card-title">Lista de contratos</span>
     <input class="search-input" placeholder="🔍 Buscar..." oninput="filterTable(this,'ctt')"/></div>
     <div id="ctt">${spin()}</div></div>`;
-  const [contratos,clientes,pontos]=await Promise.all([api('GET','/contracts/'),api('GET','/clients/'),api('GET','/pontos/')]).catch(()=>[[],[],[]]);
+  const [contratos,clientes,pontos,props]=await Promise.all([
+    api('GET','/contracts/'),api('GET','/clients/'),
+    api('GET','/pontos/'),api('GET','/proprietarios/')
+  ]).catch(()=>[[],[],[],[]]);
   const cm=Object.fromEntries(clientes.map(c=>[c.id,c.nome]));
   const pm=Object.fromEntries(pontos.map(p=>[p.id,p.nome]));
+  const rm=Object.fromEntries(props.map(p=>[p.id,p.nome]));
   const tb=document.getElementById('ctt');
   if(!contratos.length){tb.innerHTML=empty('📋','Nenhum contrato cadastrado');return}
-  tb.innerHTML=`<table><thead><tr><th>#</th><th>Cliente</th><th>Ponto</th><th>Valor</th><th>Repasse</th><th>Tipo Repasse</th><th>Início</th><th>Término</th><th>Status</th><th></th></tr></thead><tbody>
+  tb.innerHTML=`<table><thead><tr>
+    <th>#</th><th>Cliente</th><th>Ponto</th><th>Proprietário</th>
+    <th>Valor/mês</th><th>Repasse</th><th>Parcelas</th>
+    <th>Início</th><th>Status</th><th></th>
+  </tr></thead><tbody>
     ${contratos.map(c=>`<tr>
       <td class="mono" style="color:var(--text3)">#${c.id}</td>
-      <td>${cm[c.cliente_id]||c.cliente_id}</td>
+      <td><strong>${cm[c.cliente_id]||c.cliente_id}</strong></td>
       <td>${pm[c.ponto_id]||c.ponto_id}</td>
+      <td style="font-size:12px;color:var(--text2)">${c.proprietario_id?rm[c.proprietario_id]||'—':'—'}</td>
       <td class="mono">${fmt(c.valor_cents)}</td>
-      <td class="mono" style="color:var(--danger)">${fmt(c.repasse_cents||0)}${c.repasse_percent?` <span style="color:var(--text3);font-size:11px">(${c.repasse_percent}%)</span>`:''}</td>
-      <td><span class="badge ${c.tipo_repasse==='PERMUTA'?'badge-tv':'badge-disponivel'}">${c.tipo_repasse||'DINHEIRO'}</span></td>
+      <td style="font-size:12px">${c.tipo_repasse==='PERMUTA'?'<span class="badge badge-tv">PERMUTA</span>':(c.repasse_cents?fmt(c.repasse_cents):'—')}</td>
+      <td style="text-align:center"><span class="badge badge-pendente">${c.num_parcelas||1}x</span></td>
       <td>${fmtDate(c.data_inicio)}</td>
-      <td>${fmtDate(c.data_termino)}</td>
       <td>${bStatus(c.status)}</td>
       <td><div class="actions-cell">
+        <button class="btn btn-blue btn-sm" onclick="openParcelasModal(${c.id})">Parcelas</button>
+        <button class="btn btn-secondary btn-sm" onclick='openContratoModal(${JSON.stringify(c)})'>Editar</button>
         ${c.status==='ATIVO'?`<button class="btn btn-danger btn-sm" onclick="cancelContrato(${c.id})">Cancelar</button>`:`<button class="btn btn-success btn-sm" onclick="openRenovarModal(${c.id})">Renovar</button>`}
-        <button class="btn btn-secondary btn-sm" onclick='openContratoModal(${JSON.stringify(c)})'>Ver</button>
       </div></td></tr>`).join('')}
   </tbody></table>`;
 }
 
 async function openContratoModal(c){
-  const [clientes,pontos]=await Promise.all([api('GET','/clients/'),api('GET','/pontos/')]);
+  const [clientes,pontos,props,cfg]=await Promise.all([
+    api('GET','/clients/'),api('GET','/pontos/'),
+    api('GET','/proprietarios/'),api('GET','/contracts/config')
+  ]);
   const edit=!!c;
+  // Proprietario do ponto selecionado
+  const pontoMap=Object.fromEntries(pontos.map(p=>[p.id,p]));
+
   openModal(edit?`Contrato #${c.id}`:'Novo Contrato',`
-    <div class="section-title">📋 Dados do Contrato</div>
-    <div class="form-group"><label>Cliente *</label>
-      <select id="ct-cli" onchange="calcularRepasse()">${clientes.map(cl=>`<option value="${cl.id}" ${c?.cliente_id===cl.id?'selected':''}>${cl.nome}</option>`).join('')}</select></div>
+    <div class="section-title">👤 Partes do Contrato</div>
+    <div class="form-group"><label>Cliente (Locatário) *</label>
+      <select id="ct-cli">${clientes.map(cl=>`<option value="${cl.id}" ${c?.cliente_id===cl.id?'selected':''}>${cl.nome} ${cl.documento?'— '+cl.documento:''}</option>`).join('')}</select>
+    </div>
     <div class="form-group"><label>Ponto de Mídia *</label>
-      <select id="ct-pto">${pontos.map(p=>`<option value="${p.id}" ${c?.ponto_id===p.id?'selected':''}>${p.nome} (${p.tipo}) — ${p.status}</option>`).join('')}</select></div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor mensal (R$)</label><input id="ct-val" type="number" step="0.01" value="${c?(c.valor_cents/100).toFixed(2):''}" oninput="calcularRepasse()"/></div>
-      <div class="form-group"><label>Tipo de Repasse</label>
-        <select id="ct-repasse-tipo" onchange="togglePermuta()">
-          <option value="DINHEIRO" ${c?.tipo_repasse==='DINHEIRO'||!c?'selected':''}>💵 Dinheiro</option>
-          <option value="PERMUTA" ${c?.tipo_repasse==='PERMUTA'?'selected':''}>🔄 Permuta (anúncios)</option>
-        </select>
+      <select id="ct-pto" onchange="autoPreencherProprietario(this,'ct-prop',${JSON.stringify(pontoMap).replace(/</g,'&lt;')})">${pontos.map(p=>`<option value="${p.id}" data-prop="${p.proprietario_id||''}" ${c?.ponto_id===p.id?'selected':''}>${p.nome} (${p.tipo}) — ${p.status}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Proprietário (Locador)</label>
+      <select id="ct-prop"><option value="">— Nenhum —</option>${props.map(p=>`<option value="${p.id}" ${c?.proprietario_id===p.id?'selected':''}>${p.nome} ${p.documento?'— '+p.documento:''}</option>`).join('')}</select>
+    </div>
+    <div class="section-title">💰 Valores e Parcelas</div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Valor mensal (R$) *</label>
+        <input id="ct-val" type="number" step="0.01" value="${c?(c.valor_cents/100).toFixed(2):''}" oninput="calcRepasse()"/>
+      </div>
+      <div class="form-group"><label>Nº de Parcelas *</label>
+        <input id="ct-nparcelas" type="number" min="1" max="120" value="${c?.num_parcelas||1}"/>
+      </div>
+      <div class="form-group"><label>Data de Início *</label>
+        <input id="ct-ini" type="date" value="${c?.data_inicio||''}"/>
       </div>
     </div>
-    <div id="repasse-dinheiro-row">
+    <div class="section-title">🔄 Repasse ao Proprietário</div>
+    <div class="form-group"><label>Tipo de Repasse</label>
+      <select id="ct-repasse-tipo" onchange="toggleRepasse()">
+        <option value="DINHEIRO" ${c?.tipo_repasse==='DINHEIRO'||!c?'selected':''}>💵 Dinheiro</option>
+        <option value="PERMUTA"  ${c?.tipo_repasse==='PERMUTA'?'selected':''}>🔄 Permuta (espaço por anúncios)</option>
+        <option value="ISENTO"   ${c?.tipo_repasse==='ISENTO'?'selected':''}>✓ Isento (sem repasse)</option>
+      </select>
+    </div>
+    <div id="repasse-fields">
       <div class="form-row">
-        <div class="form-group"><label>% Repasse ao proprietário</label><input id="ct-repasse-pct" type="number" step="0.1" min="0" max="100" value="${c?.repasse_percent||0}" oninput="calcularRepasse()"/></div>
-        <div class="form-group"><label>Valor de repasse (R$)</label><input id="ct-repasse-val" type="number" step="0.01" value="${c?(c.repasse_cents/100).toFixed(2):'0.00'}" oninput="calcularRepasseInverso()"/></div>
+        <div class="form-group"><label>% Repasse</label>
+          <input id="ct-rep-pct" type="number" step="0.1" min="0" max="100" value="${c?.repasse_percent||0}" oninput="calcRepasse()"/>
+        </div>
+        <div class="form-group"><label>Valor Repasse (R$)</label>
+          <input id="ct-rep-val" type="number" step="0.01" value="${c?(c.repasse_cents/100).toFixed(2):'0.00'}" oninput="calcRepasseInv()"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Dia vencimento locatário</label>
+          <input id="ct-dia-vec" type="number" min="1" max="31" value="${c?.dia_vencimento||cfg.dia_vencimento_locatario||25}"/>
+        </div>
+        <div class="form-group"><label>Dia pagamento locador</label>
+          <input id="ct-dia-pag" type="number" min="1" max="31" value="${c?.dia_pagamento||cfg.dia_pagamento_locador||30}"/>
+        </div>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Data de início</label><input id="ct-ini" type="date" value="${c?.data_inicio||''}"/></div>
-      <div class="form-group"><label>Data de término</label><input id="ct-fim" type="date" value="${c?.data_termino||''}"/></div>
+    <div class="form-group"><label>Observações</label>
+      <textarea id="ct-obs">${c?.observacoes||''}</textarea>
     </div>
-    <div class="form-group"><label>Observações</label><textarea id="ct-obs">${c?.observacoes||''}</textarea></div>
     ${edit?`<div class="form-group"><label>Status</label>
       <select id="ct-status">
         <option ${c.status==='ATIVO'?'selected':''}>ATIVO</option>
@@ -619,38 +701,238 @@ async function openContratoModal(c){
         <option ${c.status==='FINALIZADO'?'selected':''}>FINALIZADO</option>
         <option ${c.status==='CANCELADO'?'selected':''}>CANCELADO</option>
       </select></div>`:''}
+    <div id="ct-preview" style="margin-top:12px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);font-size:13px;color:var(--text2);display:none"></div>
   `,`<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>
-     ${!edit?`<button class="btn btn-primary" onclick="saveContrato(null)">Criar Contrato</button>`:`<button class="btn btn-blue" onclick="saveContrato(${c.id})">Atualizar</button>`}`);
-  togglePermuta();
+     <button class="btn btn-secondary" onclick="previewParcelas()">👁 Preview</button>
+     ${!edit?`<button class="btn btn-primary" onclick="saveContrato(null)">Criar e Gerar Parcelas</button>`
+            :`<button class="btn btn-blue" onclick="saveContrato(${c.id})">Salvar e Regenerar Parcelas</button>`}`);
+
+  toggleRepasse();
+  // Auto-preenche proprietário se ponto já selecionado
+  if(c?.ponto_id && c?.proprietario_id){
+    document.getElementById('ct-prop').value = c.proprietario_id;
+  }
 }
 
-function calcularRepasse(){
-  const val=parseFloat(document.getElementById('ct-val')?.value||0);
-  const pct=parseFloat(document.getElementById('ct-repasse-pct')?.value||0);
-  const repEl=document.getElementById('ct-repasse-val');
-  if(repEl) repEl.value=(val*pct/100).toFixed(2);
+function autoPreencherProprietario(sel, propSelId, pontoMap){
+  const pid = parseInt(sel.value);
+  const ponto = pontoMap[pid];
+  if(ponto?.proprietario_id){
+    document.getElementById(propSelId).value = ponto.proprietario_id;
+  }
 }
-function calcularRepasseInverso(){
-  const val=parseFloat(document.getElementById('ct-val')?.value||0);
-  const rep=parseFloat(document.getElementById('ct-repasse-val')?.value||0);
-  const pctEl=document.getElementById('ct-repasse-pct');
-  if(pctEl&&val>0) pctEl.value=(rep/val*100).toFixed(1);
+
+function calcRepasse(){
+  const val=parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const pct=parseFloat((document.getElementById('ct-rep-pct')?.value||'0').replace(',','.'));
+  const el=document.getElementById('ct-rep-val');
+  if(el&&!isNaN(val)&&!isNaN(pct)) el.value=(val*pct/100).toFixed(2);
 }
-function togglePermuta(){
+function calcRepasseInv(){
+  const val=parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const rep=parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'));
+  const el=document.getElementById('ct-rep-pct');
+  if(el&&val>0&&!isNaN(rep)) el.value=(rep/val*100).toFixed(1);
+}
+function toggleRepasse(){
   const tipo=document.getElementById('ct-repasse-tipo')?.value;
-  const row=document.getElementById('repasse-dinheiro-row');
-  if(row) row.style.display=tipo==='PERMUTA'?'none':'block';
+  const el=document.getElementById('repasse-fields');
+  if(el) el.style.display=(tipo==='PERMUTA'||tipo==='ISENTO')?'none':'block';
+}
+
+function previewParcelas(){
+  const val   = parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const n     = parseInt(document.getElementById('ct-nparcelas')?.value||1);
+  const ini   = document.getElementById('ct-ini')?.value;
+  const dVec  = parseInt(document.getElementById('ct-dia-vec')?.value||25);
+  const dPag  = parseInt(document.getElementById('ct-dia-pag')?.value||30);
+  const tipo  = document.getElementById('ct-repasse-tipo')?.value||'DINHEIRO';
+  const rep   = parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'));
+  const el    = document.getElementById('ct-preview');
+  if(!ini||!val){el.style.display='block';el.innerHTML='⚠ Informe valor e data de início para ver o preview';return}
+  let html = `<strong>Preview de ${n} parcela(s):</strong><br><br>`;
+  html += `<div style="display:grid;grid-template-columns:${tipo==='DINHEIRO'&&rep>0?'1fr 1fr':'1fr'};gap:8px">`;
+  html += `<div><strong style="color:var(--success)">Recebimentos (dia ${dVec})</strong><br>`;
+  for(let i=1;i<=Math.min(n,6);i++){
+    const dt = calcDtParcela(ini,i,dVec);
+    html += `<div style="margin-top:4px">Parcela ${i}/${n} — ${dt} — <span style="color:var(--success)">R$ ${val.toFixed(2).replace('.',',')}</span></div>`;
+  }
+  if(n>6) html+=`<div style="color:var(--text3)">... +${n-6} parcelas</div>`;
+  html+='</div>';
+  if(tipo==='DINHEIRO'&&rep>0){
+    html+=`<div><strong style="color:var(--danger)">Repasses (dia ${dPag})</strong><br>`;
+    for(let i=1;i<=Math.min(n,6);i++){
+      const dt=calcDtParcela(ini,i,dPag);
+      html+=`<div style="margin-top:4px">Parcela ${i}/${n} — ${dt} — <span style="color:var(--danger)">R$ ${rep.toFixed(2).replace('.',',')}</span></div>`;
+    }
+    if(n>6) html+=`<div style="color:var(--text3)">... +${n-6} parcelas</div>`;
+    html+='</div>';
+  }
+  html+='</div>';
+  html+=`<br><strong>Total receber: <span style="color:var(--success)">R$ ${(val*n).toFixed(2).replace('.',',')}</span></strong>`;
+  if(tipo==='DINHEIRO'&&rep>0) html+=` | <strong>Total repassar: <span style="color:var(--danger)">R$ ${(rep*n).toFixed(2).replace('.',',')}</span></strong>`;
+  el.style.display='block'; el.innerHTML=html;
+}
+
+function calcDtParcela(dataInicio,numero,dia){
+  const base=new Date(dataInicio+'T12:00:00');
+  let mes=base.getMonth()+numero;
+  let ano=base.getFullYear()+Math.floor((mes-1)/12);
+  mes=((mes-1)%12)+1;
+  const ultimo=new Date(ano,mes,0).getDate();
+  const diaReal=Math.min(dia,ultimo);
+  return `${String(diaReal).padStart(2,'0')}/${String(mes).padStart(2,'0')}/${ano}`;
 }
 
 async function saveContrato(id){
   const tipo=v('ct-repasse-tipo');
-  const body={cliente_id:parseInt(document.getElementById('ct-cli').value),ponto_id:parseInt(document.getElementById('ct-pto').value),valor_cents:Math.round(parseFloat(document.getElementById('ct-val').value||0)*100),repasse_percent:parseFloat(document.getElementById('ct-repasse-pct')?.value||0),repasse_cents:tipo==='PERMUTA'?0:Math.round(parseFloat(document.getElementById('ct-repasse-val')?.value||0)*100),tipo_repasse:tipo,data_inicio:v('ct-ini'),data_termino:v('ct-fim'),observacoes:v('ct-obs')};
+  const body={
+    cliente_id:     parseInt(document.getElementById('ct-cli').value),
+    ponto_id:       parseInt(document.getElementById('ct-pto').value),
+    proprietario_id:parseInt(document.getElementById('ct-prop').value)||null,
+    valor_cents:    Math.round(parseFloat((document.getElementById('ct-val').value||'0').replace(',','.'))*100),
+    num_parcelas:   parseInt(document.getElementById('ct-nparcelas').value||1),
+    repasse_percent:tipo==='DINHEIRO'?parseFloat((document.getElementById('ct-rep-pct')?.value||'0').replace(',','.')):0,
+    repasse_cents:  tipo==='DINHEIRO'?Math.round(parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'))*100):0,
+    tipo_repasse:   tipo,
+    dia_vencimento: parseInt(document.getElementById('ct-dia-vec')?.value||25),
+    dia_pagamento:  parseInt(document.getElementById('ct-dia-pag')?.value||30),
+    data_inicio:    v('ct-ini'),
+    data_termino:   v('ct-fim')||null,
+    observacoes:    v('ct-obs'),
+  };
   if(id) body.status=v('ct-status');
-  try{if(id)await api('PUT',`/contracts/${id}`,body);else await api('POST','/contracts/',body);closeModal();renderContratos()}catch(e){alert(e.message)}
+  if(!body.cliente_id||!body.ponto_id){alert('Cliente e ponto obrigatórios');return}
+  if(!body.data_inicio){alert('Data de início obrigatória');return}
+  if(body.num_parcelas<1||body.num_parcelas>120){alert('Número de parcelas deve ser entre 1 e 120');return}
+  try{
+    const result=id?await api('PUT',`/contracts/${id}`,body):await api('POST','/contracts/',body);
+    closeModal();
+    renderContratos();
+    // Mostra resumo das parcelas geradas
+    if(result.parcelas){
+      const rec=result.parcelas.filter(p=>p.tipo==='RECEBIMENTO').length;
+      const rep=result.parcelas.filter(p=>p.tipo==='REPASSE').length;
+      setTimeout(()=>alert(`✓ Contrato salvo!\n${rec} parcelas de recebimento geradas.${rep?'\n'+rep+' parcelas de repasse geradas.':''}`),300);
+    }
+  }catch(e){alert(e.message)}
 }
-async function cancelContrato(id){if(!confirm('Cancelar este contrato?'))return;await api('POST',`/contracts/${id}/cancel`).catch(e=>alert(e.message));renderContratos()}
-function openRenovarModal(id){openModal('Renovar Contrato',`<div class="form-group"><label>Nova data de término *</label><input id="renew-date" type="date"/></div>`,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-success" onclick="renovarContrato(${id})">Renovar</button>`)}
-async function renovarContrato(id){const dt=v('renew-date');if(!dt){alert('Informe a data');return}try{await api('POST',`/contracts/${id}/renew`,{data_termino:dt});closeModal();renderContratos()}catch(e){alert(e.message)}}
+
+async function openParcelasModal(contratoId){
+  const contrato=await api('GET',`/contracts/${contratoId}`).catch(()=>null);
+  if(!contrato){alert('Erro ao carregar contrato');return}
+  const receb=contrato.parcelas?.filter(p=>p.tipo==='RECEBIMENTO')||[];
+  const repas=contrato.parcelas?.filter(p=>p.tipo==='REPASSE')||[];
+  const hoje=new Date().toISOString().slice(0,10);
+
+  const tabelaParcelas=(lista,titulo,cor)=>{
+    if(!lista.length) return '';
+    return `<div class="section-title" style="color:${cor}">${titulo}</div>
+    <table style="margin-bottom:16px"><thead><tr>
+      <th>#</th><th>Competência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pago em</th><th></th>
+    </tr></thead><tbody>
+      ${lista.map(p=>`<tr>
+        <td>${p.numero}</td>
+        <td>${p.competencia}</td>
+        <td style="${p.data_vencimento<hoje&&p.status==='PENDENTE'?'color:var(--danger);font-weight:600':''}">${fmtDate(p.data_vencimento)}</td>
+        <td class="mono">${fmt(p.valor_cents)}</td>
+        <td>${bStatus(p.status)}</td>
+        <td style="font-size:12px;color:var(--text2)">${p.data_pagamento?fmtDate(p.data_pagamento):'—'}</td>
+        <td><div class="actions-cell">
+          ${p.status==='PENDENTE'?`<button class="btn btn-success btn-sm" onclick="pagarParcela(${p.id},${contratoId})">Pagar</button>`:''}
+          <button class="btn btn-secondary btn-sm" onclick="editarParcela(${p.id},${contratoId})">✎</button>
+        </div></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  };
+
+  const totalRec=receb.reduce((a,p)=>a+p.valor_cents,0);
+  const pagoRec=receb.filter(p=>p.status==='PAGO').reduce((a,p)=>a+p.valor_cents,0);
+  const totalRep=repas.reduce((a,p)=>a+p.valor_cents,0);
+  const pagoRep=repas.filter(p=>p.status==='PAGO').reduce((a,p)=>a+p.valor_cents,0);
+
+  openModal(`Parcelas — Contrato #${contratoId}`,`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+      <div class="resumo-card"><div class="resumo-label">Total Receber</div><div class="resumo-value stat-green" style="font-size:18px">${fmt(totalRec)}</div><div style="font-size:11px;color:var(--text3)">Pago: ${fmt(pagoRec)}</div></div>
+      <div class="resumo-card"><div class="resumo-label">Total Repassar</div><div class="resumo-value stat-red" style="font-size:18px">${fmt(totalRep)}</div><div style="font-size:11px;color:var(--text3)">Pago: ${fmt(pagoRep)}</div></div>
+      <div class="resumo-card"><div class="resumo-label">Saldo Líquido</div><div class="resumo-value ${totalRec-totalRep>=0?'stat-green':'stat-red'}" style="font-size:18px">${fmt(totalRec-totalRep)}</div></div>
+    </div>
+    ${tabelaParcelas(receb,'📥 Recebimentos do Cliente','var(--success)')}
+    ${tabelaParcelas(repas,'📤 Repasses ao Proprietário','var(--danger)')}
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>`);
+}
+
+async function pagarParcela(parcelaId,contratoId){
+  const hoje=new Date().toISOString().slice(0,10);
+  const dt=prompt('Data do pagamento (AAAA-MM-DD):',hoje);
+  if(!dt) return;
+  await api('POST',`/contracts/parcelas/${parcelaId}/pagar`,{data_pagamento:dt}).catch(e=>alert(e.message));
+  openParcelasModal(contratoId);
+}
+
+async function editarParcela(parcelaId,contratoId){
+  const hoje=new Date().toISOString().slice(0,10);
+  const novoVenc=prompt('Nova data de vencimento (AAAA-MM-DD) — deixe em branco para manter:');
+  const novoValor=prompt('Novo valor em R$ — deixe em branco para manter:');
+  const body={};
+  if(novoVenc) body.data_vencimento=novoVenc;
+  if(novoValor) body.valor_cents=Math.round(parseFloat(novoValor)*100);
+  if(Object.keys(body).length){
+    await api('PUT',`/contracts/parcelas/${parcelaId}`,body).catch(e=>alert(e.message));
+    openParcelasModal(contratoId);
+  }
+}
+
+async function cancelContrato(id){
+  if(!confirm('Cancelar este contrato? As parcelas pendentes também serão canceladas.'))return;
+  await api('POST',`/contracts/${id}/cancel`).catch(e=>alert(e.message));
+  renderContratos();
+}
+
+function openRenovarModal(id){
+  openModal('Renovar Contrato',`
+    <div class="form-group"><label>Nº de Parcelas *</label><input id="renew-n" type="number" min="1" max="120" value="12"/></div>
+    <div class="form-group"><label>Nova Data de Início *</label><input id="renew-ini" type="date" value="${new Date().toISOString().slice(0,10)}"/></div>
+    <div class="form-group"><label>Nova Data de Término (opcional)</label><input id="renew-fim" type="date"/></div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-success" onclick="renovarContrato(${id})">Renovar e Gerar Parcelas</button>`);
+}
+
+async function renovarContrato(id){
+  const body={num_parcelas:parseInt(v('renew-n')||12),data_inicio:v('renew-ini'),data_termino:v('renew-fim')||null};
+  if(!body.data_inicio){alert('Data de início obrigatória');return}
+  try{await api('POST',`/contracts/${id}/renew`,body);closeModal();renderContratos()}catch(e){alert(e.message)}
+}
+
+async function openConfigModal(){
+  const cfg=await api('GET','/contracts/config').catch(()=>({}));
+  openModal('⚙ Configurações do Sistema',`
+    <div class="section-title">Datas Padrão de Pagamento</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Dia de vencimento (clientes)</label>
+        <input id="cfg-vec" type="number" min="1" max="31" value="${cfg.dia_vencimento_locatario||25}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Dia do mês em que os clientes pagam o aluguel</div>
+      </div>
+      <div class="form-group">
+        <label>Dia de pagamento (proprietários)</label>
+        <input id="cfg-pag" type="number" min="1" max="31" value="${cfg.dia_pagamento_locador||30}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Dia do mês em que os proprietários recebem o repasse</div>
+      </div>
+    </div>
+    <div style="padding:10px;background:rgba(232,184,75,.08);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text2);margin-top:8px">
+      ⚠ Estas configurações afetam apenas novos contratos. Parcelas já geradas mantêm suas datas originais.
+    </div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>`);
+}
+
+async function salvarConfig(){
+  const body={dia_vencimento_locatario:v('cfg-vec'),dia_pagamento_locador:v('cfg-pag')};
+  await api('PUT','/contracts/config',body).catch(e=>alert(e.message));
+  closeModal();
+  alert('Configurações salvas!');
+}
 
 // ── PROPRIETÁRIOS ─────────────────────────────────────────────
 async function renderProprietarios(){
@@ -749,7 +1031,7 @@ async function loadResumo(){
         <div class="resumo-card"><div class="resumo-label">Total Saídas</div><div class="resumo-value stat-red">${fmt(r.saidas_total)}</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Pagas: ${fmt(r.saidas_pagas)} | Pendentes: ${fmt(r.saidas_pendentes)}</div></div>
         <div class="resumo-card"><div class="resumo-label">Saldo Realizado</div><div class="resumo-value ${r.saldo_realizado>=0?'stat-green':'stat-red'}">${fmt(r.saldo_realizado)}</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Previsto: ${fmt(r.saldo_previsto)}</div></div>
       </div>`;
-  }catch(e){el.innerHTML=`<div style="color:var(--danger)">${e.message}</div>`}
+  }catch(e){el.innerHTML=`<div style="color:var(--danger)">${e.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`}
 }
 
 async function loadLancamentos(){
@@ -811,7 +1093,7 @@ function openLancamentoModal(){
 }
 
 async function saveLancamento(){
-  const body={tipo:v('l-tipo'),categoria:v('l-cat'),descricao:v('l-desc'),valor_cents:Math.round(parseFloat(document.getElementById('l-val').value||0)*100),data_lancamento:v('l-data'),status:v('l-status')};
+  const body={tipo:v('l-tipo'),categoria:v('l-cat'),descricao:v('l-desc'),valor_cents:Math.round(parseFloat((document.getElementById('l-val').value||'0').replace(',','.'))*100),data_lancamento:v('l-data'),status:v('l-status')};
   if(!body.valor_cents){alert('Valor obrigatório');return}
   try{await api('POST','/financeiro/lancamentos',body);closeModal();loadLancamentos()}catch(e){alert(e.message)}
 }

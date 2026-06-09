@@ -38,100 +38,111 @@ def get_db():
 def init_db():
     conn = get_db()
     cur  = conn.cursor()
-    cur.execute('''CREATE TABLE IF NOT EXISTS users (
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'admin',
+        email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'admin', active INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS colaboradores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'colaborador',
         active INTEGER NOT NULL DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS colaboradores (
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS config (
+        chave TEXT PRIMARY KEY, valor TEXT NOT NULL, descricao TEXT)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT NOT NULL UNIQUE,
-        role TEXT NOT NULL DEFAULT 'colaborador',
-        active INTEGER NOT NULL DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS clientes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        documento TEXT,
-        tipo_pessoa TEXT DEFAULT 'PF',
-        telefone TEXT,
-        email TEXT,
-        cep TEXT, logradouro TEXT, numero TEXT,
-        complemento TEXT, bairro TEXT, cidade TEXT, estado TEXT,
+        nome TEXT NOT NULL, documento TEXT, tipo_pessoa TEXT DEFAULT 'PF',
+        telefone TEXT, email TEXT,
+        cep TEXT, logradouro TEXT, numero TEXT, complemento TEXT,
+        bairro TEXT, cidade TEXT, estado TEXT,
         banco_nome TEXT, banco_agencia TEXT, banco_conta TEXT,
         banco_tipo TEXT, banco_pix TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS proprietarios (
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS proprietarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        documento TEXT,
-        tipo_pessoa TEXT DEFAULT 'PF',
-        telefone TEXT,
-        email TEXT,
-        cep TEXT, logradouro TEXT, numero TEXT,
-        complemento TEXT, bairro TEXT, cidade TEXT, estado TEXT,
+        nome TEXT NOT NULL, documento TEXT, tipo_pessoa TEXT DEFAULT 'PF',
+        telefone TEXT, email TEXT,
+        cep TEXT, logradouro TEXT, numero TEXT, complemento TEXT,
+        bairro TEXT, cidade TEXT, estado TEXT,
         banco_nome TEXT, banco_agencia TEXT, banco_conta TEXT,
         banco_tipo TEXT, banco_pix TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS pontos (
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS pontos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        tipo TEXT NOT NULL DEFAULT 'OUTDOOR',
-        cep TEXT, logradouro TEXT, numero TEXT,
-        complemento TEXT, bairro TEXT, cidade TEXT, estado TEXT,
-        endereco TEXT,
+        nome TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'OUTDOOR',
+        cep TEXT, logradouro TEXT, numero TEXT, complemento TEXT,
+        bairro TEXT, cidade TEXT, estado TEXT, endereco TEXT,
         latitude REAL, longitude REAL,
         status TEXT DEFAULT 'DISPONIVEL',
         proprietario_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(proprietario_id) REFERENCES proprietarios(id))''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS contratos (
+        FOREIGN KEY(proprietario_id) REFERENCES proprietarios(id))""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS contratos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cliente_id INTEGER NOT NULL,
         ponto_id INTEGER NOT NULL,
+        proprietario_id INTEGER,
         valor_cents INTEGER DEFAULT 0,
+        num_parcelas INTEGER DEFAULT 1,
         repasse_percent REAL DEFAULT 0,
         repasse_cents INTEGER DEFAULT 0,
         tipo_repasse TEXT DEFAULT 'DINHEIRO',
+        dia_vencimento INTEGER DEFAULT 25,
+        dia_pagamento INTEGER DEFAULT 30,
         status TEXT DEFAULT 'ATIVO',
-        data_inicio DATE,
-        data_termino DATE,
-        observacoes TEXT,
+        data_inicio DATE, data_termino DATE, observacoes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(cliente_id) REFERENCES clientes(id),
-        FOREIGN KEY(ponto_id) REFERENCES pontos(id))''')
-    # ── Módulo financeiro ──────────────────────────────────────
-    cur.execute('''CREATE TABLE IF NOT EXISTS lancamentos (
+        FOREIGN KEY(ponto_id)   REFERENCES pontos(id),
+        FOREIGN KEY(proprietario_id) REFERENCES proprietarios(id))""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS parcelas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo TEXT NOT NULL CHECK(tipo IN ('ENTRADA','SAIDA')),
-        categoria TEXT NOT NULL,
-        descricao TEXT,
+        contrato_id INTEGER NOT NULL,
+        tipo TEXT NOT NULL CHECK(tipo IN ('RECEBIMENTO','REPASSE')),
+        numero INTEGER NOT NULL,
+        competencia TEXT NOT NULL,
+        data_vencimento DATE NOT NULL,
         valor_cents INTEGER NOT NULL,
-        data_lancamento DATE NOT NULL,
-        contrato_id INTEGER,
-        cliente_id INTEGER,
-        proprietario_id INTEGER,
-        status TEXT DEFAULT 'PENDENTE' CHECK(status IN ('PENDENTE','PAGO','CANCELADO')),
-        data_pagamento DATE,
+        status TEXT DEFAULT 'PENDENTE' CHECK(status IN ('PENDENTE','PAGO','CANCELADO','ATRASADO')),
+        data_pagamento DATE, observacoes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(contrato_id) REFERENCES contratos(id),
-        FOREIGN KEY(cliente_id) REFERENCES clientes(id),
-        FOREIGN KEY(proprietario_id) REFERENCES proprietarios(id))''')
-    # ── Migrations para bancos existentes ─────────────────────
+        FOREIGN KEY(contrato_id) REFERENCES contratos(id))""")
+
+    # Config defaults
+    cur.execute("INSERT OR IGNORE INTO config VALUES ('dia_vencimento_locatario','25','Dia do vencimento das parcelas dos clientes')")
+    cur.execute("INSERT OR IGNORE INTO config VALUES ('dia_pagamento_locador','30','Dia do pagamento das parcelas aos proprietarios')")
+
+    # ── Migrations para bancos existentes ──────────────────────
     def _col(t, c, tp='TEXT'):
+        # Whitelist de tipos validos para prevenir injecao em migracao
+        _safe_types = ('TEXT','INTEGER','REAL','BLOB','NUMERIC')
+        if tp.upper() not in _safe_types: return
         try: cur.execute(f'ALTER TABLE {t} ADD COLUMN {c} {tp}')
         except: pass
+
     for c in ['cep','logradouro','numero','complemento','bairro','cidade','estado',
               'banco_nome','banco_agencia','banco_conta','banco_tipo','banco_pix','tipo_pessoa']:
         _col('clientes', c); _col('proprietarios', c)
     for c in ['cep','logradouro','numero','complemento','bairro','cidade','estado','endereco']:
         _col('pontos', c)
-    for c in ['repasse_percent','repasse_cents','tipo_repasse','observacoes']:
-        tp = 'REAL' if c == 'repasse_percent' else ('INTEGER' if c == 'repasse_cents' else 'TEXT')
-        _col('contratos', c, tp)
-    conn.commit(); conn.close()
+    for row in [('proprietario_id','INTEGER'),('num_parcelas','INTEGER'),
+                ('repasse_percent','REAL'),('repasse_cents','INTEGER'),
+                ('tipo_repasse','TEXT'),('dia_vencimento','INTEGER'),
+                ('dia_pagamento','INTEGER'),('observacoes','TEXT')]:
+        _col('contratos', row[0], row[1])
+
+    conn.commit()
+    conn.close()
+
 
 # ── Domain helpers ─────────────────────────────────────────────
 def row_exists(table, row_id):
@@ -156,35 +167,6 @@ def update_ponto_status_from_contracts(ponto_id):
     st = 'OCUPADO' if active else 'DISPONIVEL'
     conn.execute('UPDATE pontos SET status=? WHERE id=?', (st, ponto_id))
     conn.commit(); conn.close(); return st
-
-def gerar_lancamentos_contrato(contrato_id, conn):
-    """Gera automaticamente lançamentos de entrada e repasse para o contrato."""
-    c = conn.execute(
-        'SELECT id, cliente_id, ponto_id, valor_cents, repasse_cents, tipo_repasse, '
-        'data_inicio, data_termino FROM contratos WHERE id=?', (contrato_id,)).fetchone()
-    if not c: return
-    ponto = conn.execute(
-        'SELECT proprietario_id, nome FROM pontos WHERE id=?', (c['ponto_id'],)).fetchone()
-    # Lançamento de entrada (recebimento do cliente)
-    conn.execute('''INSERT INTO lancamentos
-        (tipo, categoria, descricao, valor_cents, data_lancamento,
-         contrato_id, cliente_id, status)
-        VALUES (?,?,?,?,?,?,?,?)''',
-        ('ENTRADA', 'ALUGUEL', f'Contrato #{contrato_id} - Aluguel mensal',
-         c['valor_cents'], c['data_inicio'] or str(datetime.date.today()),
-         contrato_id, c['cliente_id'], 'PENDENTE'))
-    # Lançamento de repasse ao proprietário (se houver)
-    if ponto and ponto['proprietario_id'] and c['repasse_cents'] and c['repasse_cents'] > 0:
-        desc = (f'Repasse contrato #{contrato_id} - {ponto["nome"]}'
-                if c['tipo_repasse'] == 'DINHEIRO'
-                else f'Permuta contrato #{contrato_id} - {ponto["nome"]}')
-        conn.execute('''INSERT INTO lancamentos
-            (tipo, categoria, descricao, valor_cents, data_lancamento,
-             contrato_id, proprietario_id, status)
-            VALUES (?,?,?,?,?,?,?,?)''',
-            ('SAIDA', 'REPASSE', desc,
-             c['repasse_cents'], c['data_inicio'] or str(datetime.date.today()),
-             contrato_id, ponto['proprietario_id'], 'PENDENTE'))
 
 # ── Auth decorator ─────────────────────────────────────────────
 def token_required(f):
