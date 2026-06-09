@@ -1010,7 +1010,7 @@ async function loadFinTab(tab){
     loadResumo();
   } else {
     el.innerHTML=`<div style="display:flex;gap:10px;margin-bottom:16px">
-      <select id="fin-tipo" onchange="loadLancamentos()" style="width:160px"><option value="">Todos</option><option value="ENTRADA">Entradas</option><option value="SAIDA">Saídas</option></select>
+      <select id="fin-tipo" onchange="loadLancamentos()" style="width:160px"><option value="">Todos</option><option value="RECEBIMENTO">A Receber</option><option value="REPASSE">A Repassar</option></select>
       <select id="fin-status" onchange="loadLancamentos()" style="width:160px"><option value="">Todos status</option><option value="PENDENTE">Pendente</option><option value="PAGO">Pago</option><option value="CANCELADO">Cancelado</option></select>
       <input type="month" id="fin-mes-l" value="${new Date().toISOString().slice(0,7)}" onchange="loadLancamentos()" style="width:160px"/>
     </div>
@@ -1065,8 +1065,1128 @@ async function loadLancamentos(){
 
 async function pagarLancamento(id){
   const hoje=new Date().toISOString().slice(0,10);
-  await api('PUT',`/financeiro/lancamentos/${id}`,{status:'PAGO',data_pagamento:hoje}).catch(e=>alert(e.message));
+  const dt=prompt('Data do pagamento (AAAA-MM-DD):',hoje);
+  if(!dt) return;
+  await api('POST',`/financeiro/lancamentos/${id}/pagar`,{data_pagamento:dt}).catch(e=>alert(e.message));
   loadLancamentos();
+  loadResumo();
+}
+async function deleteLancamento(id){if(!confirm('Excluir lançamento?'))return;await api('DELETE',`/financeiro/lancamentos/${id}`).catch(e=>alert(e.message));loadLancamentos()}
+
+function openLancamentoModal(){
+  openModal('Novo Lançamento',`
+    <div class="form-row">
+      <div class="form-group"><label>Tipo *</label>
+        <select id="l-tipo"><option value="ENTRADA">Entrada</option><option value="SAIDA">Saída</option></select>
+      </div>
+      <div class="form-group"><label>Categoria *</label>
+        <select id="l-cat"><option value="ALUGUEL">Aluguel</option><option value="REPASSE">Repasse</option><option value="MANUTENCAO">Manutenção</option><option value="OUTRO">Outro</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label>Descrição</label><input id="l-desc" placeholder="Ex: Pagamento contrato #3 - Janeiro"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Valor (R$) *</label><input id="l-val" type="number" step="0.01" placeholder="0,00"/></div>
+      <div class="form-group"><label>Data *</label><input id="l-data" type="date" value="${new Date().toISOString().slice(0,10)}"/></div>
+    </div>
+    <div class="form-group"><label>Status</label>
+      <select id="l-status"><option value="PENDENTE">Pendente</option><option value="PAGO">Pago</option></select>
+    </div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveLancamento()">Criar</button>`);
+}
+
+async function saveLancamento(){
+  const body={tipo:v('l-tipo'),categoria:v('l-cat'),descricao:v('l-desc'),valor_cents:Math.round(parseFloat((document.getElementById('l-val').value||'0').replace(',','.'))*100),data_lancamento:v('l-data'),status:v('l-status')};
+  if(!body.valor_cents){alert('Valor obrigatório');return}
+  try{await api('POST','/financeiro/lancamentos',body);closeModal();loadLancamentos()}catch(e){alert(e.message)}
+}
+</script>
+</body>
+</html>tb.innerHTML=`<table><thead><tr><th>#</th><th>Tipo</th><th>Contrato / Ponto</th><th>Parte</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pago em</th><th></th></tr></thead><tbody>
+    ${rows.map(l=>`<tr>
+      <td class="mono" style="color:var(--text3)">${l.id}</td>
+      <td><span class="badge badge-${l.tipo==='RECEBIMENTO'?'entrada':'saida'}">${l.tipo==='RECEBIMENTO'?'📥 RECEBER':'📤 REPASSAR'}</span></td>
+      <td style="font-size:12px">#${l.contrato_id}${l.ponto_nome?` — ${l.ponto_nome}`:''}</td>
+      <td style="font-size:12px">${l.tipo==='RECEBIMENTO'?(l.cliente_nome||'—'):(l.proprietario_nome||'—')}</td>
+      <td style="${l.data_vencimento<new Date().toISOString().slice(0,10)&&l.status==='PENDENTE'?'color:var(--danger);font-weight:600':''}">${fmtDate(l.data_vencimento)}</td>
+      <td class="mono" style="${l.tipo==='RECEBIMENTO'?'color:var(--success)':'color:var(--danger)'}">${fmt(l.valor_cents)}</td>
+      <td>${bStatus(l.status)}</td>
+      <td style="font-size:12px;color:var(--text2)">${l.data_pagamento?fmtDate(l.data_pagamento):'—'}</td>
+      <td><div class="actions-cell">
+        ${l.status==='PENDENTE'?`<button class="btn btn-success btn-sm" onclick="pagarLancamento(${l.id})">Pagar</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteLancamento(${l.id})" title="Cancelar">✕</button>
+      </div></td></tr>`).join('')}
+  </tbody></table>`;html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>MídiaControl</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#0f1117;--surface:#181c27;--surface2:#1e2334;--border:#2a3044;--accent:#e8b84b;--accent2:#3d7fff;--danger:#e05050;--success:#3ecf8e;--warning:#f5a623;--text:#e8eaf0;--text2:#8b92a8;--text3:#555e78;--r:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at 30% 20%,#1a2240 0%,var(--bg) 60%)}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 40px;width:390px;box-shadow:var(--shadow)}
+.login-logo{font-family:'DM Serif Display',serif;font-size:28px;color:var(--accent);margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--text2);margin-bottom:32px}
+.login-tabs{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:4px;margin-bottom:24px}
+.login-tab{flex:1;text-align:center;padding:8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text2);border:none;background:transparent;transition:all .2s}
+.login-tab.active{background:var(--surface2);color:var(--text);font-weight:500}
+.form-group{margin-bottom:13px}
+label{font-size:11px;color:var(--text2);display:block;margin-bottom:5px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px 13px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
+input:disabled{opacity:.5}
+select option{background:var(--surface)}
+textarea{resize:vertical;min-height:70px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:var(--r);border:none;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#1a1200}.btn-primary:hover{background:#f0c85a}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{background:var(--border)}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-success{background:var(--success);color:#0a2e1e}.btn-success:hover{opacity:.88}
+.btn-blue{background:var(--accent2);color:#fff}.btn-blue:hover{opacity:.88}
+.btn-warn{background:var(--warning);color:#1a0e00}
+.btn-full{width:100%;justify-content:center}.btn-sm{padding:6px 12px;font-size:12px}
+.alert{padding:10px 14px;border-radius:var(--r);margin-bottom:14px;font-size:13px}
+.alert-error{background:rgba(224,80,80,.12);border:1px solid var(--danger);color:#f08080}
+.alert-success{background:rgba(62,207,142,.12);border:1px solid var(--success);color:var(--success)}
+#app{display:none}.layout{display:flex;min-height:100vh}
+.sidebar{width:224px;min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+.sidebar-logo{padding:22px 20px 18px;border-bottom:1px solid var(--border)}
+.sidebar-logo .brand{font-family:'DM Serif Display',serif;font-size:20px;color:var(--accent)}
+.sidebar-logo .tagline{font-size:11px;color:var(--text3);margin-top:2px}
+.nav{flex:1;padding:10px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;font-size:13.5px;color:var(--text2);border:none;background:transparent;width:100%;text-align:left;transition:all .15s}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);background:rgba(232,184,75,.08);border-right:3px solid var(--accent)}
+.sidebar-footer{padding:14px 20px;border-top:1px solid var(--border)}
+.user-chip{font-size:12px;color:var(--text2);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.main{margin-left:224px;flex:1;padding:28px 32px;min-height:100vh}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-title{font-family:'DM Serif Display',serif;font-size:26px}
+.page-sub{font-size:13px;color:var(--text2);margin-top:2px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px}
+.stat-value{font-family:'DM Serif Display',serif;font-size:30px}
+.stat-accent{color:var(--accent)}.stat-blue{color:var(--accent2)}.stat-green{color:var(--success)}.stat-red{color:var(--danger)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.card-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.card-title{font-size:15px;font-weight:600}
+.search-input{padding:8px 12px;font-size:13px;width:220px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:11px 16px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);border-bottom:1px solid var(--border);font-weight:500}
+td{padding:11px 16px;font-size:13.5px;border-bottom:1px solid rgba(42,48,68,.5);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.013)}
+.actions-cell{display:flex;gap:5px;flex-wrap:wrap}
+.badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600}
+.badge-ativo{background:rgba(62,207,142,.15);color:var(--success)}
+.badge-cancelado{background:rgba(224,80,80,.15);color:var(--danger)}
+.badge-finalizado,.badge-pago{background:rgba(139,146,168,.15);color:var(--text2)}
+.badge-pendente{background:rgba(245,166,35,.15);color:var(--warning)}
+.badge-disponivel{background:rgba(62,207,142,.15);color:var(--success)}
+.badge-ocupado{background:rgba(224,80,80,.15);color:var(--danger)}
+.badge-outdoor{background:rgba(61,127,255,.15);color:var(--accent2)}
+.badge-tv{background:rgba(232,184,75,.15);color:var(--accent)}
+.badge-entrada{background:rgba(62,207,142,.15);color:var(--success)}
+.badge-saida{background:rgba(224,80,80,.15);color:var(--danger)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:660px;max-width:97vw;max-height:93vh;overflow-y:auto;box-shadow:var(--shadow);transform:translateY(20px);transition:transform .2s}
+.modal-overlay.open .modal{transform:translateY(0)}
+.modal-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:2}
+.modal-title{font-size:16px;font-weight:600}
+.modal-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:20px;line-height:1}
+.modal-body{padding:22px 24px}
+.modal-footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:var(--surface)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin:18px 0 11px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.cep-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
+.cep-status{font-size:11px;margin-top:4px;min-height:15px}
+.empty{text-align:center;padding:56px 20px;color:var(--text3)}
+.empty-icon{font-size:38px;margin-bottom:12px}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+.spinner-sm{width:13px;height:13px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.mono{font-family:monospace}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+.tag-pix{background:rgba(61,127,255,.15);color:var(--accent2)}
+.tag-cnpj{background:rgba(232,184,75,.15);color:var(--accent)}
+#map{height:280px;border-radius:8px;border:1px solid var(--border);margin-top:8px}
+.fin-tabs{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:4px;margin-bottom:18px}
+.fin-tab{flex:1;text-align:center;padding:9px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text2);border:none;background:transparent;transition:all .2s}
+.fin-tab.active{background:var(--surface2);color:var(--text);font-weight:500}
+.resumo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.resumo-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.resumo-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:5px}
+.resumo-value{font-family:'DM Serif Display',serif;font-size:22px}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">MídiaControl</div>
+    <div class="login-sub">Gestão de locação de pontos de mídia</div>
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchTab('login')">Entrar</button>
+      <button class="login-tab" onclick="switchTab('register')">Criar conta</button>
+    </div>
+    <div id="auth-alert"></div>
+    <div class="form-group"><label>E-mail</label><input type="email" id="auth-email" placeholder="seu@email.com"/></div>
+    <div class="form-group"><label>Senha</label><input type="password" id="auth-password" onkeydown="if(event.key==='Enter')doAuth()"/></div>
+    <button class="btn btn-primary btn-full" onclick="doAuth()"><span id="auth-btn-text">Entrar</span></button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="layout">
+    <div class="sidebar">
+      <div class="sidebar-logo"><div class="brand">MídiaControl</div><div class="tagline">Gestão de Locação</div></div>
+      <nav class="nav">
+        <button class="nav-item" onclick="navigate('dashboard')"><span style="width:20px;text-align:center">◈</span> Dashboard</button>
+        <button class="nav-item" onclick="navigate('clientes')"><span style="width:20px;text-align:center">👤</span> Clientes</button>
+        <button class="nav-item" onclick="navigate('pontos')"><span style="width:20px;text-align:center">📍</span> Pontos de Mídia</button>
+        <button class="nav-item" onclick="navigate('contratos')"><span style="width:20px;text-align:center">📋</span> Contratos</button>
+        <button class="nav-item" onclick="navigate('proprietarios')"><span style="width:20px;text-align:center">🏢</span> Proprietários</button>
+        <button class="nav-item" onclick="navigate('financeiro')"><span style="width:20px;text-align:center">💰</span> Financeiro</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip" id="sidebar-user"></div>
+        <button class="btn btn-secondary btn-full btn-sm" onclick="logout()">Sair</button>
+      </div>
+    </div>
+    <main class="main" id="main-content"></main>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="modal-title"></span><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── STATE ────────────────────────────────────────────────────
+let TOKEN = '';
+let USER_EMAIL = '';
+let _map = null, _mapMarker = null;
+
+// Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
+// Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('boot') === '1') {
+    // Nova execucao do .exe: apaga credenciais da sessao anterior
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    // Remove o parametro da URL sem recarregar
+    window.history.replaceState({}, '', '/');
+  } else {
+    // Recarregamento normal: restaura sessao se existir
+    TOKEN = sessionStorage.getItem('mc_token') || '';
+    USER_EMAIL = sessionStorage.getItem('mc_email') || '';
+  }
+})();
+
+// ── API ──────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if (TOKEN) opts.headers['Authorization'] = 'Bearer '+TOKEN;
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api'+path, opts);
+  const data = await r.json().catch(()=>({}));
+  // Token invalido, expirado ou usuario inativo: logout automatico silencioso
+  if (r.status === 401) {
+    TOKEN = ''; USER_EMAIL = '';
+    sessionStorage.removeItem('mc_token');
+    sessionStorage.removeItem('mc_email');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('auth-alert').innerHTML =
+      '<div class="alert alert-error">Sessão expirada. Faça login novamente.</div>';
+    setTimeout(()=>{ const el=document.getElementById('auth-alert'); if(el) el.innerHTML=''; }, 5000);
+    throw new Error('session_expired');
+  }
+  if (!r.ok) throw new Error(data.error||r.statusText);
+  return data;
+}
+
+// ── CNPJ lookup ──────────────────────────────────────────────
+async function buscarCNPJ(prefix) {
+  const el = document.getElementById(prefix+'documento');
+  const st = document.getElementById(prefix+'cnpj-status');
+  const cnpj = (el?.value||'').replace(/\D/g,'');
+  if (cnpj.length !== 14) { st.textContent='CNPJ inválido — informe os 14 dígitos'; st.style.color='var(--danger)'; return; }
+  st.innerHTML='<span class="spinner spinner-sm"></span> Buscando...'; st.style.color='var(--text3)';
+  try {
+    // Usa função api() que já inclui o header Authorization automaticamente
+    const d = await api('GET', '/util/cnpj/'+cnpj);
+    // Campos de dados principais (IDs com sufixo -tel e -email)
+    const setVal = (id, val) => { const e=document.getElementById(id); if(e&&val) e.value=val; };
+    setVal(prefix+'nome',      d.razao_social||d.nome_fantasia||'');
+    // Tenta os dois padrões de ID para telefone e email
+    const telId  = document.getElementById(prefix+'tel')   ? prefix+'tel'   : prefix+'telefone';
+    const mailId = document.getElementById(prefix+'email') ? prefix+'email' : prefix+'email';
+    setVal(telId,  d.telefone||'');
+    setVal(mailId, d.email||'');
+    setVal(prefix+'cep',        d.cep ? d.cep.replace(/\D/g,'').replace(/(\d{5})(\d{3})/,'$1-$2') : '');
+    setVal(prefix+'logradouro', d.logradouro||'');
+    setVal(prefix+'numero',     d.numero||'');
+    setVal(prefix+'complemento',d.complemento||'');
+    setVal(prefix+'bairro',     d.bairro||'');
+    setVal(prefix+'cidade',     d.municipio||d.cidade||'');
+    setVal(prefix+'estado',     d.uf||'');
+    const tpEl = document.getElementById(prefix+'tipo_pessoa');
+    if (tpEl) tpEl.value = 'PJ';
+    st.textContent = '✓ '+(d.razao_social||d.nome_fantasia||'Dados preenchidos');
+    st.style.color = 'var(--success)';
+  } catch(e) { st.textContent = '✗ '+e.message; st.style.color='var(--danger)'; }
+}
+
+// ── CEP lookup ───────────────────────────────────────────────
+async function buscarCEP(prefix, fillCoords) {
+  const el = document.getElementById(prefix+'cep');
+  const st = document.getElementById(prefix+'cep-status');
+  const cep = el.value.replace(/\D/g,'');
+  if (cep.length !== 8) { st.textContent='CEP inválido'; st.style.color='var(--danger)'; return; }
+  st.innerHTML='<span class="spinner spinner-sm"></span> Buscando...'; st.style.color='var(--text3)';
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const d = await r.json();
+    if (d.erro) throw new Error('CEP não encontrado');
+    document.getElementById(prefix+'logradouro').value = d.logradouro||'';
+    document.getElementById(prefix+'bairro').value = d.bairro||'';
+    document.getElementById(prefix+'cidade').value = d.localidade||'';
+    document.getElementById(prefix+'estado').value = d.uf||'';
+    st.textContent='✓ Endereço preenchido'; st.style.color='var(--success)';
+    document.getElementById(prefix+'numero')?.focus();
+    if (fillCoords) setTimeout(()=>geocodificarEndereco(prefix), 600);
+  } catch(e) { st.textContent=e.message; st.style.color='var(--danger)'; }
+}
+
+function maskCEP(el){ let v=el.value.replace(/\D/g,''); if(v.length>5) v=v.slice(0,5)+'-'+v.slice(5,8); el.value=v; }
+function maskDoc(el){ 
+  let v=el.value.replace(/\D/g,'');
+  if(v.length<=11) v=v.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+  else v=v.replace(/(\d{2})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1/$2').replace(/(\d{4})(\d{1,2})$/,'$1-$2');
+  el.value=v;
+}
+
+// ── Geocodificação Nominatim (OSM) ────────────────────────────
+async function geocodificarEndereco(prefix) {
+  const log = document.getElementById(prefix+'logradouro')?.value||'';
+  const num = document.getElementById(prefix+'numero')?.value||'';
+  const cid = document.getElementById(prefix+'cidade')?.value||'';
+  const est = document.getElementById(prefix+'estado')?.value||'';
+  if (!log || !cid) return;
+  const q = encodeURIComponent(`${log} ${num}, ${cid}, ${est}, Brasil`);
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`,
+      {headers:{'Accept-Language':'pt-BR'}});
+    const data = await r.json();
+    if (data.length) {
+      const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+      const latEl = document.getElementById(prefix+'lat');
+      const lngEl = document.getElementById(prefix+'lng');
+      if (latEl) latEl.value = lat.toFixed(6);
+      if (lngEl) lngEl.value = lng.toFixed(6);
+      atualizarMapa(lat, lng);
+    }
+  } catch(e) { console.warn('Geocodificação falhou:', e); }
+}
+
+// ── Mapa Leaflet ──────────────────────────────────────────────
+function initMap(lat, lng) {
+  if (_map) { _map.remove(); _map=null; _mapMarker=null; }
+  setTimeout(()=>{
+    const el = document.getElementById('map');
+    if (!el) return;
+    const center = (lat && lng) ? [lat, lng] : [-15.7801, -47.9292];
+    _map = L.map('map').setView(center, lat?15:5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {attribution:'© OpenStreetMap', maxZoom:19}).addTo(_map);
+    if (lat && lng) {
+      _mapMarker = L.marker([lat,lng]).addTo(_map);
+    }
+    _map.on('click', function(e){
+      const {lat, lng} = e.latlng;
+      atualizarMapa(lat, lng);
+      const latEl = document.getElementById('p-lat');
+      const lngEl = document.getElementById('p-lng');
+      if (latEl) latEl.value = lat.toFixed(6);
+      if (lngEl) lngEl.value = lng.toFixed(6);
+    });
+  }, 100);
+}
+
+function atualizarMapa(lat, lng) {
+  if (!_map) return;
+  if (_mapMarker) _map.removeLayer(_mapMarker);
+  _mapMarker = L.marker([lat,lng]).addTo(_map);
+  _map.setView([lat,lng], 15);
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+const fmt = c => 'R$ '+(c/100).toFixed(2).replace('.',',');
+const fmtDate = d => d ? d.split('-').reverse().join('/') : '';
+const bStatus = s => {const m={ATIVO:'ativo',CANCELADO:'cancelado',FINALIZADO:'finalizado',DISPONIVEL:'disponivel',OCUPADO:'ocupado',PAGO:'pago',PENDENTE:'pendente'};return`<span class="badge badge-${m[s]||''}">${s}</span>`};
+const bTipo = t => `<span class="badge badge-${t==='TV'?'tv':'outdoor'}">${t}</span>`;
+const spin = () => '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
+const empty = (icon,text) => `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${text}</div></div>`;
+const v = id => {const e=document.getElementById(id);return e?e.value.trim():'';};
+const addrStr = r => { if(!r) return ''; const p=[r.logradouro,r.numero,r.bairro,r.cidade,r.estado].filter(Boolean); return p.length?p.join(', '):(r.endereco||''); };
+
+function openModal(title,body,footer){document.getElementById('modal-title').textContent=title;document.getElementById('modal-body').innerHTML=body;document.getElementById('modal-footer').innerHTML=footer||'';document.getElementById('modal').classList.add('open')}
+function closeModal(){document.getElementById('modal').classList.remove('open');if(_map){_map.remove();_map=null;_mapMarker=null;}}
+function closeModalOutside(e){if(e.target===document.getElementById('modal'))closeModal()}
+function filterTable(inp,tid){const q=inp.value.toLowerCase();document.getElementById(tid).querySelectorAll('tbody tr').forEach(tr=>tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none')}
+function getAddr(p){return{cep:v(p+'cep'),logradouro:v(p+'logradouro'),numero:v(p+'numero'),complemento:v(p+'complemento'),bairro:v(p+'bairro'),cidade:v(p+'cidade'),estado:v(p+'estado')}}
+function getBanco(p){return{banco_nome:v(p+'banco_nome'),banco_agencia:v(p+'banco_agencia'),banco_conta:v(p+'banco_conta'),banco_tipo:v(p+'banco_tipo'),banco_pix:v(p+'banco_pix')}}
+
+// ── Formulários reutilizáveis ─────────────────────────────────
+function formCNPJ(prefix,d){
+  return `<div class="section-title">🔍 Busca por CNPJ</div>
+  <div class="cep-row">
+    <div class="form-group" style="margin-bottom:0">
+      <label>CNPJ (busca automática)</label>
+      <input id="${prefix}documento" value="${d?.documento||''}" placeholder="00.000.000/0000-00" oninput="maskDoc(this)" maxlength="18"/>
+      <div class="cep-status" id="${prefix}cnpj-status"></div>
+    </div>
+    <button type="button" class="btn btn-warn btn-sm" style="margin-top:20px;padding:10px 14px" onclick="buscarCNPJ('${prefix}')">🔍 Buscar CNPJ</button>
+  </div>
+  <div class="form-group" style="margin-top:10px"><label>Tipo de Pessoa</label>
+    <select id="${prefix}tipo_pessoa"><option value="PF" ${d?.tipo_pessoa==='PF'||!d?'selected':''}>Pessoa Física</option><option value="PJ" ${d?.tipo_pessoa==='PJ'?'selected':''}>Pessoa Jurídica</option></select>
+  </div>`;
+}
+
+function formEndereco(prefix,d){
+  return `<div class="section-title">📍 Endereço</div>
+  <div class="cep-row">
+    <div class="form-group" style="margin-bottom:0"><label>CEP</label>
+      <input id="${prefix}cep" value="${d?.cep||''}" placeholder="00000-000" oninput="maskCEP(this)" maxlength="9"/>
+      <div class="cep-status" id="${prefix}cep-status"></div>
+    </div>
+    <button type="button" class="btn btn-blue btn-sm" style="margin-top:20px;padding:10px 14px" onclick="buscarCEP('${prefix}',false)">🔍 Buscar CEP</button>
+  </div>
+  <div class="form-row" style="margin-top:11px">
+    <div class="form-group"><label>Logradouro</label><input id="${prefix}logradouro" value="${d?.logradouro||''}"/></div>
+    <div class="form-group"><label>Número</label><input id="${prefix}numero" value="${d?.numero||''}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Complemento</label><input id="${prefix}complemento" value="${d?.complemento||''}"/></div>
+    <div class="form-group"><label>Bairro</label><input id="${prefix}bairro" value="${d?.bairro||''}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Cidade</label><input id="${prefix}cidade" value="${d?.cidade||''}"/></div>
+    <div class="form-group"><label>Estado</label>
+      <select id="${prefix}estado">${['','AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s=>`<option ${d?.estado===s?'selected':''}>${s}</option>`).join('')}</select>
+    </div>
+  </div>`;
+}
+
+function formBanco(prefix,d){
+  return `<div class="section-title">🏦 Dados Bancários</div>
+  <div class="form-row">
+    <div class="form-group"><label>Banco</label><input id="${prefix}banco_nome" value="${d?.banco_nome||''}" placeholder="Ex: Bradesco, Itaú, Nubank"/></div>
+    <div class="form-group"><label>Tipo de conta</label>
+      <select id="${prefix}banco_tipo">
+        <option value="" ${!d?.banco_tipo?'selected':''}>Selecionar...</option>
+        <option value="Corrente" ${d?.banco_tipo==='Corrente'?'selected':''}>Conta Corrente</option>
+        <option value="Poupança" ${d?.banco_tipo==='Poupança'?'selected':''}>Conta Poupança</option>
+        <option value="Pagamento" ${d?.banco_tipo==='Pagamento'?'selected':''}>Conta Pagamento</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Agência</label><input id="${prefix}banco_agencia" value="${d?.banco_agencia||''}" placeholder="0000"/></div>
+    <div class="form-group"><label>Conta</label><input id="${prefix}banco_conta" value="${d?.banco_conta||''}" placeholder="00000-0"/></div>
+  </div>
+  <div class="form-group"><label>Chave PIX</label><input id="${prefix}banco_pix" value="${d?.banco_pix||''}" placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"/></div>`;
+}
+
+// ── AUTH ──────────────────────────────────────────────────────
+let authMode='login';
+function switchTab(m){authMode=m;document.querySelectorAll('.login-tab').forEach((t,i)=>t.classList.toggle('active',(m==='login'&&i===0)||(m==='register'&&i===1)));document.getElementById('auth-btn-text').textContent=m==='login'?'Entrar':'Criar conta'}
+async function doAuth(){
+  const email=document.getElementById('auth-email').value.trim();
+  const pwd=document.getElementById('auth-password').value;
+  const alertEl=document.getElementById('auth-alert');
+  if(!email||!pwd){showAlert(alertEl,'Preencha e-mail e senha.','error');return}
+  try{
+    if(authMode==='register'){await api('POST','/auth/register',{email,password:pwd});showAlert(alertEl,'Conta criada! Faça login.','success');switchTab('login');return}
+    const data=await api('POST','/auth/login',{email,password:pwd});
+    TOKEN=data.token; USER_EMAIL=email;
+    sessionStorage.setItem('mc_token',TOKEN); sessionStorage.setItem('mc_email',email);
+    startApp();
+  }catch(e){showAlert(alertEl,e.message,'error')}
+}
+function showAlert(el,msg,type){el.innerHTML=`<div class="alert alert-${type}">${msg}</div>`;setTimeout(()=>el.innerHTML='',5000)}
+function logout(){TOKEN='';USER_EMAIL='';sessionStorage.removeItem('mc_token');sessionStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
+function startApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';document.getElementById('sidebar-user').textContent=USER_EMAIL;navigate('dashboard')}
+if(TOKEN) startApp();
+
+// ── NAVIGATION ────────────────────────────────────────────────
+function navigate(page){
+  document.querySelectorAll('.nav-item').forEach((el,i)=>{
+    el.classList.toggle('active',['dashboard','clientes','pontos','contratos','proprietarios','financeiro'][i]===page);
+  });
+  ({dashboard:renderDashboard,clientes:renderClientes,pontos:renderPontos,contratos:renderContratos,proprietarios:renderProprietarios,financeiro:renderFinanceiro})[page]?.();
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────
+async function renderDashboard(){
+  const el=document.getElementById('main-content');
+  el.innerHTML=`<div class="page-header"><div><div class="page-title">Dashboard</div><div class="page-sub">Visão geral do sistema</div></div></div><div class="stats-grid" id="stats">${spin()}</div><div id="fin-resumo"></div>`;
+  try{
+    const [clientes,pontos,contratos,resumo]=await Promise.all([api('GET','/clients/'),api('GET','/pontos/'),api('GET','/contracts/'),api('GET','/financeiro/resumo')]);
+    const ativos=contratos.filter(c=>c.status==='ATIVO').length;
+    document.getElementById('stats').innerHTML=`
+      <div class="stat-card"><div class="stat-label">Clientes</div><div class="stat-value stat-blue">${clientes.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Pontos de Mídia</div><div class="stat-value stat-accent">${pontos.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Contratos Ativos</div><div class="stat-value stat-green">${ativos}</div></div>
+      <div class="stat-card"><div class="stat-label">Saldo Realizado</div><div class="stat-value ${resumo.saldo_realizado>=0?'stat-green':'stat-red'}" style="font-size:22px">${fmt(resumo.saldo_realizado)}</div></div>`;
+    document.getElementById('fin-resumo').innerHTML=`
+      <div class="resumo-grid" style="margin-top:0">
+        <div class="resumo-card"><div class="resumo-label">Entradas Previstas</div><div class="resumo-value stat-green">${fmt(resumo.entradas_total)}</div></div>
+        <div class="resumo-card"><div class="resumo-label">Saídas (Repasses)</div><div class="resumo-value stat-red">${fmt(resumo.saidas_total)}</div></div>
+        <div class="resumo-card"><div class="resumo-label">Saldo Previsto</div><div class="resumo-value ${resumo.saldo_previsto>=0?'stat-green':'stat-red'}">${fmt(resumo.saldo_previsto)}</div></div>
+      </div>`;
+  }catch(e){if(e.message!=='session_expired')document.getElementById('stats').innerHTML=`<div style="color:var(--danger);padding:20px">${e.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`}
+}
+
+// ── CLIENTES ──────────────────────────────────────────────────
+async function renderClientes(){
+  document.getElementById('main-content').innerHTML=`
+    <div class="page-header"><div><div class="page-title">Clientes</div><div class="page-sub">Cadastro completo com busca por CNPJ</div></div>
+    <button class="btn btn-primary" onclick="openClienteModal()">+ Novo Cliente</button></div>
+    <div class="card"><div class="card-header"><span class="card-title">Lista de clientes</span>
+    <input class="search-input" placeholder="🔍 Buscar..." oninput="filterTable(this,'ct')"/></div>
+    <div id="ct">${spin()}</div></div>`;
+  const rows=await api('GET','/clients/').catch(()=>[]);
+  const tb=document.getElementById('ct');
+  if(!rows.length){tb.innerHTML=empty('👤','Nenhum cliente cadastrado');return}
+  tb.innerHTML=`<table><thead><tr><th>Nome</th><th>Doc.</th><th>Tipo</th><th>Telefone</th><th>Endereço</th><th>Banco / PIX</th><th></th></tr></thead><tbody>
+    ${rows.map(c=>`<tr>
+      <td><strong>${c.nome}</strong></td>
+      <td>${c.documento||'—'}</td>
+      <td><span class="tag tag-cnpj">${c.tipo_pessoa||'PF'}</span></td>
+      <td>${c.telefone||'—'}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${addrStr(c)||'—'}</td>
+      <td style="font-size:12px">${c.banco_nome?`${c.banco_nome}${c.banco_pix?`<br><span class="tag tag-pix">PIX</span> ${c.banco_pix}`:''}`:c.banco_pix?`<span class="tag tag-pix">PIX</span> ${c.banco_pix}`:'—'}</td>
+      <td><div class="actions-cell">
+        <button class="btn btn-secondary btn-sm" onclick='openClienteModal(${JSON.stringify(c)})'>Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCliente(${c.id})">✕</button>
+      </div></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function openClienteModal(c){
+  const edit=!!c;
+  openModal(edit?'Editar Cliente':'Novo Cliente',`
+    <div class="section-title">👤 Dados Principais</div>
+    <div class="form-group"><label>Nome / Razão Social *</label><input id="c-nome" value="${c?.nome||''}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Telefone</label><input id="c-tel" value="${c?.telefone||''}"/></div>
+      <div class="form-group"><label>E-mail</label><input id="c-email" type="email" value="${c?.email||''}"/></div>
+    </div>
+    ${formCNPJ('c-',c)}
+    ${formEndereco('c-',c)}
+    ${formBanco('c-',c)}
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveCliente(${c?.id||'null'})">${edit?'Salvar':'Criar'}</button>`);
+}
+
+async function saveCliente(id){
+  const body={nome:v('c-nome'),documento:v('c-documento'),tipo_pessoa:v('c-tipo_pessoa'),telefone:v('c-tel'),email:v('c-email'),...getAddr('c-'),...getBanco('c-')};
+  if(!body.nome){alert('Nome obrigatório');return}
+  try{if(id)await api('PUT',`/clients/${id}`,body);else await api('POST','/clients/',body);closeModal();renderClientes()}catch(e){alert(e.message)}
+}
+async function deleteCliente(id){if(!confirm('Excluir este cliente?'))return;await api('DELETE',`/clients/${id}`).catch(e=>alert(e.message));renderClientes()}
+
+// ── PONTOS ────────────────────────────────────────────────────
+async function renderPontos(){
+  document.getElementById('main-content').innerHTML=`
+    <div class="page-header"><div><div class="page-title">Pontos de Mídia</div><div class="page-sub">Outdoors, TVs e painéis — com mapa</div></div>
+    <button class="btn btn-primary" onclick="openPontoModal()">+ Novo Ponto</button></div>
+    <div class="card"><div class="card-header"><span class="card-title">Lista de pontos</span>
+    <input class="search-input" placeholder="🔍 Buscar..." oninput="filterTable(this,'pt')"/></div>
+    <div id="pt">${spin()}</div></div>`;
+  const rows=await api('GET','/pontos/').catch(()=>[]);
+  const tb=document.getElementById('pt');
+  if(!rows.length){tb.innerHTML=empty('📍','Nenhum ponto cadastrado');return}
+  tb.innerHTML=`<table><thead><tr><th>Nome</th><th>Tipo</th><th>CEP</th><th>Endereço</th><th>Status</th><th>Coords.</th><th></th></tr></thead><tbody>
+    ${rows.map(p=>`<tr>
+      <td><strong>${p.nome}</strong></td>
+      <td>${bTipo(p.tipo)}</td>
+      <td>${p.cep?`<span class="tag tag-cnpj">${p.cep}</span>`:'—'}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${addrStr(p)||'—'}</td>
+      <td>${bStatus(p.status)}</td>
+      <td class="mono" style="font-size:11px;color:var(--text3)">${p.latitude?.toFixed(4)||'—'}, ${p.longitude?.toFixed(4)||'—'}</td>
+      <td><div class="actions-cell">
+        <button class="btn btn-secondary btn-sm" onclick='openPontoModal(${JSON.stringify(p)})'>Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePonto(${p.id})">✕</button>
+      </div></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function openPontoModal(p){
+  const lat=p?.latitude||null, lng=p?.longitude||null;
+  openModal(p?'Editar Ponto':'Novo Ponto de Mídia',`
+    <div class="section-title">📍 Dados do Ponto</div>
+    <div class="form-group"><label>Nome *</label><input id="p-nome" value="${p?.nome||''}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Tipo</label>
+        <select id="p-tipo"><option ${p?.tipo==='OUTDOOR'||!p?'selected':''}>OUTDOOR</option><option ${p?.tipo==='TV'?'selected':''}>TV</option><option ${p?.tipo==='PAINEL'?'selected':''}>PAINEL</option><option ${p?.tipo==='BUSDOOR'?'selected':''}>BUSDOOR</option></select>
+      </div>
+      <div class="form-group"><label>Status</label>
+        <select id="p-status"><option ${p?.status==='DISPONIVEL'||!p?'selected':''}>DISPONIVEL</option><option ${p?.status==='OCUPADO'?'selected':''}>OCUPADO</option></select>
+      </div>
+    </div>
+    <div class="section-title">📍 Endereço</div>
+    <div class="cep-row">
+      <div class="form-group" style="margin-bottom:0"><label>CEP</label>
+        <input id="p-cep" value="${p?.cep||''}" placeholder="00000-000" oninput="maskCEP(this)" maxlength="9"/>
+        <div class="cep-status" id="p-cep-status"></div>
+      </div>
+      <button type="button" class="btn btn-blue btn-sm" style="margin-top:20px;padding:10px 14px" onclick="buscarCEP('p-',true)">🔍 Buscar CEP</button>
+    </div>
+    <div class="form-row" style="margin-top:11px">
+      <div class="form-group"><label>Logradouro</label><input id="p-logradouro" value="${p?.logradouro||''}" onchange="geocodificarEndereco('p-')"/></div>
+      <div class="form-group"><label>Número</label><input id="p-numero" value="${p?.numero||''}" onchange="geocodificarEndereco('p-')"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Complemento</label><input id="p-complemento" value="${p?.complemento||''}"/></div>
+      <div class="form-group"><label>Bairro</label><input id="p-bairro" value="${p?.bairro||''}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cidade</label><input id="p-cidade" value="${p?.cidade||''}" onchange="geocodificarEndereco('p-')"/></div>
+      <div class="form-group"><label>Estado</label>
+        <select id="p-estado">${['','AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s=>`<option ${p?.estado===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="section-title">🗺️ Mapa — clique para posicionar</div>
+    <div class="form-row">
+      <div class="form-group"><label>Latitude</label><input id="p-lat" type="text" inputmode="decimal" placeholder="-21.123456" value="${lat||''}" onchange="atualizarMapaManual()"/></div>
+      <div class="form-group"><label>Longitude</label><input id="p-lng" type="text" inputmode="decimal" placeholder="-48.123456" value="${lng||''}" onchange="atualizarMapaManual()"/></div>
+    </div>
+    <div id="map"></div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="savePonto(${p?.id||'null'})">${p?'Salvar':'Criar Ponto'}</button>`);
+  initMap(lat, lng);
+}
+
+function atualizarMapaManual(){
+  const lat=parseCoord(document.getElementById('p-lat')?.value);
+  const lng=parseCoord(document.getElementById('p-lng')?.value);
+  if(!isNaN(lat)&&!isNaN(lng)) atualizarMapa(lat,lng);
+}
+
+function parseCoord(val){
+  // Aceita tanto ponto quanto virgula como separador decimal (pt-BR)
+  if(!val && val!==0) return NaN;
+  return parseFloat(String(val).replace(',','.'));
+}
+async function savePonto(id){
+  const body={nome:v('p-nome'),tipo:v('p-tipo'),status:v('p-status'),
+    latitude:parseCoord(document.getElementById('p-lat').value),
+    longitude:parseCoord(document.getElementById('p-lng').value),
+    cep:v('p-cep'),logradouro:v('p-logradouro'),numero:v('p-numero'),
+    complemento:v('p-complemento'),bairro:v('p-bairro'),cidade:v('p-cidade'),estado:v('p-estado')};
+  if(!body.nome||isNaN(body.latitude)||isNaN(body.longitude)){alert('Nome, latitude e longitude são obrigatórios');return}
+  try{if(id)await api('PUT',`/pontos/${id}`,body);else await api('POST','/pontos/',body);closeModal();renderPontos()}catch(e){alert(e.message)}
+}
+async function deletePonto(id){if(!confirm('Excluir este ponto?'))return;await api('DELETE',`/pontos/${id}`).catch(e=>alert(e.message));renderPontos()}
+
+// ── CONTRATOS ─────────────────────────────────────────────
+async function renderContratos(){
+  document.getElementById('main-content').innerHTML=`
+    <div class="page-header">
+      <div><div class="page-title">Contratos</div><div class="page-sub">Locações com parcelas automáticas</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="openConfigModal()">⚙ Configurações</button>
+        <button class="btn btn-primary" onclick="openContratoModal()">+ Novo Contrato</button>
+      </div>
+    </div>
+    <div class="card"><div class="card-header"><span class="card-title">Lista de contratos</span>
+    <input class="search-input" placeholder="🔍 Buscar..." oninput="filterTable(this,'ctt')"/></div>
+    <div id="ctt">${spin()}</div></div>`;
+  const [contratos,clientes,pontos,props]=await Promise.all([
+    api('GET','/contracts/'),api('GET','/clients/'),
+    api('GET','/pontos/'),api('GET','/proprietarios/')
+  ]).catch(()=>[[],[],[],[]]);
+  const cm=Object.fromEntries(clientes.map(c=>[c.id,c.nome]));
+  const pm=Object.fromEntries(pontos.map(p=>[p.id,p.nome]));
+  const rm=Object.fromEntries(props.map(p=>[p.id,p.nome]));
+  const tb=document.getElementById('ctt');
+  if(!contratos.length){tb.innerHTML=empty('📋','Nenhum contrato cadastrado');return}
+  tb.innerHTML=`<table><thead><tr>
+    <th>#</th><th>Cliente</th><th>Ponto</th><th>Proprietário</th>
+    <th>Valor/mês</th><th>Repasse</th><th>Parcelas</th>
+    <th>Início</th><th>Status</th><th></th>
+  </tr></thead><tbody>
+    ${contratos.map(c=>`<tr>
+      <td class="mono" style="color:var(--text3)">#${c.id}</td>
+      <td><strong>${cm[c.cliente_id]||c.cliente_id}</strong></td>
+      <td>${pm[c.ponto_id]||c.ponto_id}</td>
+      <td style="font-size:12px;color:var(--text2)">${c.proprietario_id?rm[c.proprietario_id]||'—':'—'}</td>
+      <td class="mono">${fmt(c.valor_cents)}</td>
+      <td style="font-size:12px">${c.tipo_repasse==='PERMUTA'?'<span class="badge badge-tv">PERMUTA</span>':(c.repasse_cents?fmt(c.repasse_cents):'—')}</td>
+      <td style="text-align:center"><span class="badge badge-pendente">${c.num_parcelas||1}x</span></td>
+      <td>${fmtDate(c.data_inicio)}</td>
+      <td>${bStatus(c.status)}</td>
+      <td><div class="actions-cell">
+        <button class="btn btn-blue btn-sm" onclick="openParcelasModal(${c.id})">Parcelas</button>
+        <button class="btn btn-secondary btn-sm" onclick='openContratoModal(${JSON.stringify(c)})'>Editar</button>
+        ${c.status==='ATIVO'?`<button class="btn btn-danger btn-sm" onclick="cancelContrato(${c.id})">Cancelar</button>`:`<button class="btn btn-success btn-sm" onclick="openRenovarModal(${c.id})">Renovar</button>`}
+      </div></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+async function openContratoModal(c){
+  const [clientes,pontos,props,cfg]=await Promise.all([
+    api('GET','/clients/'),api('GET','/pontos/'),
+    api('GET','/proprietarios/'),api('GET','/contracts/config')
+  ]);
+  const edit=!!c;
+  // Proprietario do ponto selecionado
+  const pontoMap=Object.fromEntries(pontos.map(p=>[p.id,p]));
+
+  openModal(edit?`Contrato #${c.id}`:'Novo Contrato',`
+    <div class="section-title">👤 Partes do Contrato</div>
+    <div class="form-group"><label>Cliente (Locatário) *</label>
+      <select id="ct-cli">${clientes.map(cl=>`<option value="${cl.id}" ${c?.cliente_id===cl.id?'selected':''}>${cl.nome} ${cl.documento?'— '+cl.documento:''}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Ponto de Mídia *</label>
+      <select id="ct-pto" onchange="autoPreencherProprietario(this,'ct-prop',${JSON.stringify(pontoMap).replace(/</g,'&lt;')})">${pontos.map(p=>`<option value="${p.id}" data-prop="${p.proprietario_id||''}" ${c?.ponto_id===p.id?'selected':''}>${p.nome} (${p.tipo}) — ${p.status}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Proprietário (Locador)</label>
+      <select id="ct-prop"><option value="">— Nenhum —</option>${props.map(p=>`<option value="${p.id}" ${c?.proprietario_id===p.id?'selected':''}>${p.nome} ${p.documento?'— '+p.documento:''}</option>`).join('')}</select>
+    </div>
+    <div class="section-title">💰 Valores e Parcelas</div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Valor mensal (R$) *</label>
+        <input id="ct-val" type="number" step="0.01" value="${c?(c.valor_cents/100).toFixed(2):''}" oninput="calcRepasse()"/>
+      </div>
+      <div class="form-group"><label>Nº de Parcelas *</label>
+        <input id="ct-nparcelas" type="number" min="1" max="120" value="${c?.num_parcelas||1}"/>
+      </div>
+      <div class="form-group"><label>Data de Início *</label>
+        <input id="ct-ini" type="date" value="${c?.data_inicio||''}"/>
+      </div>
+    </div>
+    <div class="section-title">🔄 Repasse ao Proprietário</div>
+    <div class="form-group"><label>Tipo de Repasse</label>
+      <select id="ct-repasse-tipo" onchange="toggleRepasse()">
+        <option value="DINHEIRO" ${c?.tipo_repasse==='DINHEIRO'||!c?'selected':''}>💵 Dinheiro</option>
+        <option value="PERMUTA"  ${c?.tipo_repasse==='PERMUTA'?'selected':''}>🔄 Permuta (espaço por anúncios)</option>
+        <option value="ISENTO"   ${c?.tipo_repasse==='ISENTO'?'selected':''}>✓ Isento (sem repasse)</option>
+      </select>
+    </div>
+    <div id="repasse-fields">
+      <div class="form-row">
+        <div class="form-group"><label>% Repasse</label>
+          <input id="ct-rep-pct" type="number" step="0.1" min="0" max="100" value="${c?.repasse_percent||0}" oninput="calcRepasse()"/>
+        </div>
+        <div class="form-group"><label>Valor Repasse (R$)</label>
+          <input id="ct-rep-val" type="number" step="0.01" value="${c?(c.repasse_cents/100).toFixed(2):'0.00'}" oninput="calcRepasseInv()"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Dia vencimento locatário</label>
+          <input id="ct-dia-vec" type="number" min="1" max="31" value="${c?.dia_vencimento||cfg.dia_vencimento_locatario||25}"/>
+        </div>
+        <div class="form-group"><label>Dia pagamento locador</label>
+          <input id="ct-dia-pag" type="number" min="1" max="31" value="${c?.dia_pagamento||cfg.dia_pagamento_locador||30}"/>
+        </div>
+      </div>
+    </div>
+    <div class="form-group"><label>Observações</label>
+      <textarea id="ct-obs">${c?.observacoes||''}</textarea>
+    </div>
+    ${edit?`<div class="form-group"><label>Status</label>
+      <select id="ct-status">
+        <option ${c.status==='ATIVO'?'selected':''}>ATIVO</option>
+        <option ${c.status==='PENDENTE'?'selected':''}>PENDENTE</option>
+        <option ${c.status==='FINALIZADO'?'selected':''}>FINALIZADO</option>
+        <option ${c.status==='CANCELADO'?'selected':''}>CANCELADO</option>
+      </select></div>`:''}
+    <div id="ct-preview" style="margin-top:12px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);font-size:13px;color:var(--text2);display:none"></div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>
+     <button class="btn btn-secondary" onclick="previewParcelas()">👁 Preview</button>
+     ${!edit?`<button class="btn btn-primary" onclick="saveContrato(null)">Criar e Gerar Parcelas</button>`
+            :`<button class="btn btn-blue" onclick="saveContrato(${c.id})">Salvar e Regenerar Parcelas</button>`}`);
+
+  toggleRepasse();
+  // Auto-preenche proprietário se ponto já selecionado
+  if(c?.ponto_id && c?.proprietario_id){
+    document.getElementById('ct-prop').value = c.proprietario_id;
+  }
+}
+
+function autoPreencherProprietario(sel, propSelId, pontoMap){
+  const pid = parseInt(sel.value);
+  const ponto = pontoMap[pid];
+  if(ponto?.proprietario_id){
+    document.getElementById(propSelId).value = ponto.proprietario_id;
+  }
+}
+
+function calcRepasse(){
+  const val=parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const pct=parseFloat((document.getElementById('ct-rep-pct')?.value||'0').replace(',','.'));
+  const el=document.getElementById('ct-rep-val');
+  if(el&&!isNaN(val)&&!isNaN(pct)) el.value=(val*pct/100).toFixed(2);
+}
+function calcRepasseInv(){
+  const val=parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const rep=parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'));
+  const el=document.getElementById('ct-rep-pct');
+  if(el&&val>0&&!isNaN(rep)) el.value=(rep/val*100).toFixed(1);
+}
+function toggleRepasse(){
+  const tipo=document.getElementById('ct-repasse-tipo')?.value;
+  const el=document.getElementById('repasse-fields');
+  if(el) el.style.display=(tipo==='PERMUTA'||tipo==='ISENTO')?'none':'block';
+}
+
+function previewParcelas(){
+  const val   = parseFloat((document.getElementById('ct-val')?.value||'0').replace(',','.'));
+  const n     = parseInt(document.getElementById('ct-nparcelas')?.value||1);
+  const ini   = document.getElementById('ct-ini')?.value;
+  const dVec  = parseInt(document.getElementById('ct-dia-vec')?.value||25);
+  const dPag  = parseInt(document.getElementById('ct-dia-pag')?.value||30);
+  const tipo  = document.getElementById('ct-repasse-tipo')?.value||'DINHEIRO';
+  const rep   = parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'));
+  const el    = document.getElementById('ct-preview');
+  if(!ini||!val){el.style.display='block';el.innerHTML='⚠ Informe valor e data de início para ver o preview';return}
+  let html = `<strong>Preview de ${n} parcela(s):</strong><br><br>`;
+  html += `<div style="display:grid;grid-template-columns:${tipo==='DINHEIRO'&&rep>0?'1fr 1fr':'1fr'};gap:8px">`;
+  html += `<div><strong style="color:var(--success)">Recebimentos (dia ${dVec})</strong><br>`;
+  for(let i=1;i<=Math.min(n,6);i++){
+    const dt = calcDtParcela(ini,i,dVec);
+    html += `<div style="margin-top:4px">Parcela ${i}/${n} — ${dt} — <span style="color:var(--success)">R$ ${val.toFixed(2).replace('.',',')}</span></div>`;
+  }
+  if(n>6) html+=`<div style="color:var(--text3)">... +${n-6} parcelas</div>`;
+  html+='</div>';
+  if(tipo==='DINHEIRO'&&rep>0){
+    html+=`<div><strong style="color:var(--danger)">Repasses (dia ${dPag})</strong><br>`;
+    for(let i=1;i<=Math.min(n,6);i++){
+      const dt=calcDtParcela(ini,i,dPag);
+      html+=`<div style="margin-top:4px">Parcela ${i}/${n} — ${dt} — <span style="color:var(--danger)">R$ ${rep.toFixed(2).replace('.',',')}</span></div>`;
+    }
+    if(n>6) html+=`<div style="color:var(--text3)">... +${n-6} parcelas</div>`;
+    html+='</div>';
+  }
+  html+='</div>';
+  html+=`<br><strong>Total receber: <span style="color:var(--success)">R$ ${(val*n).toFixed(2).replace('.',',')}</span></strong>`;
+  if(tipo==='DINHEIRO'&&rep>0) html+=` | <strong>Total repassar: <span style="color:var(--danger)">R$ ${(rep*n).toFixed(2).replace('.',',')}</span></strong>`;
+  el.style.display='block'; el.innerHTML=html;
+}
+
+function calcDtParcela(dataInicio,numero,dia){
+  const base=new Date(dataInicio+'T12:00:00');
+  let mes=base.getMonth()+numero;
+  let ano=base.getFullYear()+Math.floor((mes-1)/12);
+  mes=((mes-1)%12)+1;
+  const ultimo=new Date(ano,mes,0).getDate();
+  const diaReal=Math.min(dia,ultimo);
+  return `${String(diaReal).padStart(2,'0')}/${String(mes).padStart(2,'0')}/${ano}`;
+}
+
+async function saveContrato(id){
+  const tipo=v('ct-repasse-tipo');
+  const body={
+    cliente_id:     parseInt(document.getElementById('ct-cli').value),
+    ponto_id:       parseInt(document.getElementById('ct-pto').value),
+    proprietario_id:parseInt(document.getElementById('ct-prop').value)||null,
+    valor_cents:    Math.round(parseFloat((document.getElementById('ct-val').value||'0').replace(',','.'))*100),
+    num_parcelas:   parseInt(document.getElementById('ct-nparcelas').value||1),
+    repasse_percent:tipo==='DINHEIRO'?parseFloat((document.getElementById('ct-rep-pct')?.value||'0').replace(',','.')):0,
+    repasse_cents:  tipo==='DINHEIRO'?Math.round(parseFloat((document.getElementById('ct-rep-val')?.value||'0').replace(',','.'))*100):0,
+    tipo_repasse:   tipo,
+    dia_vencimento: parseInt(document.getElementById('ct-dia-vec')?.value||25),
+    dia_pagamento:  parseInt(document.getElementById('ct-dia-pag')?.value||30),
+    data_inicio:    v('ct-ini'),
+    data_termino:   v('ct-fim')||null,
+    observacoes:    v('ct-obs'),
+  };
+  if(id) body.status=v('ct-status');
+  if(!body.cliente_id||!body.ponto_id){alert('Cliente e ponto obrigatórios');return}
+  if(!body.data_inicio){alert('Data de início obrigatória');return}
+  if(body.num_parcelas<1||body.num_parcelas>120){alert('Número de parcelas deve ser entre 1 e 120');return}
+  try{
+    const result=id?await api('PUT',`/contracts/${id}`,body):await api('POST','/contracts/',body);
+    closeModal();
+    renderContratos();
+    // Mostra resumo das parcelas geradas
+    if(result.parcelas){
+      const rec=result.parcelas.filter(p=>p.tipo==='RECEBIMENTO').length;
+      const rep=result.parcelas.filter(p=>p.tipo==='REPASSE').length;
+      setTimeout(()=>alert(`✓ Contrato salvo!\n${rec} parcelas de recebimento geradas.${rep?'\n'+rep+' parcelas de repasse geradas.':''}`),300);
+    }
+  }catch(e){alert(e.message)}
+}
+
+async function openParcelasModal(contratoId){
+  const contrato=await api('GET',`/contracts/${contratoId}`).catch(()=>null);
+  if(!contrato){alert('Erro ao carregar contrato');return}
+  const receb=contrato.parcelas?.filter(p=>p.tipo==='RECEBIMENTO')||[];
+  const repas=contrato.parcelas?.filter(p=>p.tipo==='REPASSE')||[];
+  const hoje=new Date().toISOString().slice(0,10);
+
+  const tabelaParcelas=(lista,titulo,cor)=>{
+    if(!lista.length) return '';
+    return `<div class="section-title" style="color:${cor}">${titulo}</div>
+    <table style="margin-bottom:16px"><thead><tr>
+      <th>#</th><th>Competência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pago em</th><th></th>
+    </tr></thead><tbody>
+      ${lista.map(p=>`<tr>
+        <td>${p.numero}</td>
+        <td>${p.competencia}</td>
+        <td style="${p.data_vencimento<hoje&&p.status==='PENDENTE'?'color:var(--danger);font-weight:600':''}">${fmtDate(p.data_vencimento)}</td>
+        <td class="mono">${fmt(p.valor_cents)}</td>
+        <td>${bStatus(p.status)}</td>
+        <td style="font-size:12px;color:var(--text2)">${p.data_pagamento?fmtDate(p.data_pagamento):'—'}</td>
+        <td><div class="actions-cell">
+          ${p.status==='PENDENTE'?`<button class="btn btn-success btn-sm" onclick="pagarParcela(${p.id},${contratoId})">Pagar</button>`:''}
+          <button class="btn btn-secondary btn-sm" onclick="editarParcela(${p.id},${contratoId})">✎</button>
+        </div></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  };
+
+  const totalRec=receb.reduce((a,p)=>a+p.valor_cents,0);
+  const pagoRec=receb.filter(p=>p.status==='PAGO').reduce((a,p)=>a+p.valor_cents,0);
+  const totalRep=repas.reduce((a,p)=>a+p.valor_cents,0);
+  const pagoRep=repas.filter(p=>p.status==='PAGO').reduce((a,p)=>a+p.valor_cents,0);
+
+  openModal(`Parcelas — Contrato #${contratoId}`,`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+      <div class="resumo-card"><div class="resumo-label">Total Receber</div><div class="resumo-value stat-green" style="font-size:18px">${fmt(totalRec)}</div><div style="font-size:11px;color:var(--text3)">Pago: ${fmt(pagoRec)}</div></div>
+      <div class="resumo-card"><div class="resumo-label">Total Repassar</div><div class="resumo-value stat-red" style="font-size:18px">${fmt(totalRep)}</div><div style="font-size:11px;color:var(--text3)">Pago: ${fmt(pagoRep)}</div></div>
+      <div class="resumo-card"><div class="resumo-label">Saldo Líquido</div><div class="resumo-value ${totalRec-totalRep>=0?'stat-green':'stat-red'}" style="font-size:18px">${fmt(totalRec-totalRep)}</div></div>
+    </div>
+    ${tabelaParcelas(receb,'📥 Recebimentos do Cliente','var(--success)')}
+    ${tabelaParcelas(repas,'📤 Repasses ao Proprietário','var(--danger)')}
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>`);
+}
+
+async function pagarParcela(parcelaId,contratoId){
+  const hoje=new Date().toISOString().slice(0,10);
+  const dt=prompt('Data do pagamento (AAAA-MM-DD):',hoje);
+  if(!dt) return;
+  await api('POST',`/contracts/parcelas/${parcelaId}/pagar`,{data_pagamento:dt}).catch(e=>alert(e.message));
+  openParcelasModal(contratoId);
+}
+
+async function editarParcela(parcelaId,contratoId){
+  const hoje=new Date().toISOString().slice(0,10);
+  const novoVenc=prompt('Nova data de vencimento (AAAA-MM-DD) — deixe em branco para manter:');
+  const novoValor=prompt('Novo valor em R$ — deixe em branco para manter:');
+  const body={};
+  if(novoVenc) body.data_vencimento=novoVenc;
+  if(novoValor) body.valor_cents=Math.round(parseFloat(novoValor)*100);
+  if(Object.keys(body).length){
+    await api('PUT',`/contracts/parcelas/${parcelaId}`,body).catch(e=>alert(e.message));
+    openParcelasModal(contratoId);
+  }
+}
+
+async function cancelContrato(id){
+  if(!confirm('Cancelar este contrato? As parcelas pendentes também serão canceladas.'))return;
+  await api('POST',`/contracts/${id}/cancel`).catch(e=>alert(e.message));
+  renderContratos();
+}
+
+function openRenovarModal(id){
+  openModal('Renovar Contrato',`
+    <div class="form-group"><label>Nº de Parcelas *</label><input id="renew-n" type="number" min="1" max="120" value="12"/></div>
+    <div class="form-group"><label>Nova Data de Início *</label><input id="renew-ini" type="date" value="${new Date().toISOString().slice(0,10)}"/></div>
+    <div class="form-group"><label>Nova Data de Término (opcional)</label><input id="renew-fim" type="date"/></div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-success" onclick="renovarContrato(${id})">Renovar e Gerar Parcelas</button>`);
+}
+
+async function renovarContrato(id){
+  const body={num_parcelas:parseInt(v('renew-n')||12),data_inicio:v('renew-ini'),data_termino:v('renew-fim')||null};
+  if(!body.data_inicio){alert('Data de início obrigatória');return}
+  try{await api('POST',`/contracts/${id}/renew`,body);closeModal();renderContratos()}catch(e){alert(e.message)}
+}
+
+async function openConfigModal(){
+  const cfg=await api('GET','/contracts/config').catch(()=>({}));
+  openModal('⚙ Configurações do Sistema',`
+    <div class="section-title">Datas Padrão de Pagamento</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Dia de vencimento (clientes)</label>
+        <input id="cfg-vec" type="number" min="1" max="31" value="${cfg.dia_vencimento_locatario||25}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Dia do mês em que os clientes pagam o aluguel</div>
+      </div>
+      <div class="form-group">
+        <label>Dia de pagamento (proprietários)</label>
+        <input id="cfg-pag" type="number" min="1" max="31" value="${cfg.dia_pagamento_locador||30}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Dia do mês em que os proprietários recebem o repasse</div>
+      </div>
+    </div>
+    <div style="padding:10px;background:rgba(232,184,75,.08);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text2);margin-top:8px">
+      ⚠ Estas configurações afetam apenas novos contratos. Parcelas já geradas mantêm suas datas originais.
+    </div>
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>`);
+}
+
+async function salvarConfig(){
+  const body={dia_vencimento_locatario:v('cfg-vec'),dia_pagamento_locador:v('cfg-pag')};
+  await api('PUT','/contracts/config',body).catch(e=>alert(e.message));
+  closeModal();
+  alert('Configurações salvas!');
+}
+
+// ── PROPRIETÁRIOS ─────────────────────────────────────────────
+async function renderProprietarios(){
+  document.getElementById('main-content').innerHTML=`
+    <div class="page-header"><div><div class="page-title">Proprietários</div><div class="page-sub">Donos dos pontos com busca por CNPJ</div></div>
+    <button class="btn btn-primary" onclick="openPropModal()">+ Novo Proprietário</button></div>
+    <div class="card"><div class="card-header"><span class="card-title">Lista de proprietários</span>
+    <input class="search-input" placeholder="🔍 Buscar..." oninput="filterTable(this,'prt')"/></div>
+    <div id="prt">${spin()}</div></div>`;
+  const rows=await api('GET','/proprietarios/').catch(()=>[]);
+  const tb=document.getElementById('prt');
+  if(!rows.length){tb.innerHTML=empty('🏢','Nenhum proprietário cadastrado');return}
+  tb.innerHTML=`<table><thead><tr><th>Nome</th><th>Doc.</th><th>Tipo</th><th>Telefone</th><th>Endereço</th><th>Banco / PIX</th><th></th></tr></thead><tbody>
+    ${rows.map(p=>`<tr>
+      <td><strong>${p.nome}</strong></td>
+      <td>${p.documento||'—'}</td>
+      <td><span class="tag tag-cnpj">${p.tipo_pessoa||'PF'}</span></td>
+      <td>${p.telefone||'—'}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${addrStr(p)||'—'}</td>
+      <td style="font-size:12px">${p.banco_nome?`${p.banco_nome}${p.banco_pix?`<br><span class="tag tag-pix">PIX</span> ${p.banco_pix}`:''}`:p.banco_pix?`<span class="tag tag-pix">PIX</span> ${p.banco_pix}`:'—'}</td>
+      <td><div class="actions-cell">
+        <button class="btn btn-secondary btn-sm" onclick='openPropModal(${JSON.stringify(p)})'>Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteProp(${p.id})">✕</button>
+      </div></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function openPropModal(p){
+  openModal(p?'Editar Proprietário':'Novo Proprietário',`
+    <div class="section-title">🏢 Dados Principais</div>
+    <div class="form-group"><label>Nome / Razão Social *</label><input id="pr-nome" value="${p?.nome||''}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Telefone</label><input id="pr-tel" value="${p?.telefone||''}"/></div>
+      <div class="form-group"><label>E-mail</label><input id="pr-email" type="email" value="${p?.email||''}"/></div>
+    </div>
+    ${formCNPJ('pr-',p)}
+    ${formEndereco('pr-',p)}
+    ${formBanco('pr-',p)}
+  `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveProp(${p?.id||'null'})">${p?'Salvar':'Criar'}</button>`);
+}
+async function saveProp(id){
+  const body={nome:v('pr-nome'),documento:v('pr-documento'),tipo_pessoa:v('pr-tipo_pessoa'),telefone:v('pr-tel'),email:v('pr-email'),...getAddr('pr-'),...getBanco('pr-')};
+  if(!body.nome){alert('Nome obrigatório');return}
+  try{if(id)await api('PUT',`/proprietarios/${id}`,body);else await api('POST','/proprietarios/',body);closeModal();renderProprietarios()}catch(e){alert(e.message)}
+}
+async function deleteProp(id){if(!confirm('Excluir?'))return;await api('DELETE',`/proprietarios/${id}`).catch(e=>alert(e.message));renderProprietarios()}
+
+// ── FINANCEIRO ────────────────────────────────────────────────
+let finTab='lancamentos';
+async function renderFinanceiro(){
+  const mes=new Date().toISOString().slice(0,7);
+  document.getElementById('main-content').innerHTML=`
+    <div class="page-header"><div><div class="page-title">Financeiro</div><div class="page-sub">Entradas, repasses e saldo</div></div>
+    <button class="btn btn-primary" onclick="openLancamentoModal()">+ Lançamento</button></div>
+    <div class="fin-tabs">
+      <button class="fin-tab active" onclick="switchFinTab('lancamentos',this)">Lançamentos</button>
+      <button class="fin-tab" onclick="switchFinTab('resumo',this)">Resumo Mensal</button>
+    </div>
+    <div id="fin-content">${spin()}</div>`;
+  loadFinTab(finTab);
+}
+
+function switchFinTab(tab,btn){
+  finTab=tab;
+  document.querySelectorAll('.fin-tab').forEach(t=>t.classList.toggle('active',t===btn));
+  loadFinTab(tab);
+}
+
+async function loadFinTab(tab){
+  const el=document.getElementById('fin-content');
+  if(tab==='resumo'){
+    const mes=new Date().toISOString().slice(0,7);
+    el.innerHTML=`<div class="form-group" style="max-width:200px"><label>Mês</label><input type="month" id="fin-mes" value="${mes}" onchange="loadResumo()"/></div><div id="resumo-content">${spin()}</div>`;
+    loadResumo();
+  } else {
+    el.innerHTML=`<div style="display:flex;gap:10px;margin-bottom:16px">
+      <select id="fin-tipo" onchange="loadLancamentos()" style="width:160px"><option value="">Todos</option><option value="RECEBIMENTO">A Receber</option><option value="REPASSE">A Repassar</option></select>
+      <select id="fin-status" onchange="loadLancamentos()" style="width:160px"><option value="">Todos status</option><option value="PENDENTE">Pendente</option><option value="PAGO">Pago</option><option value="CANCELADO">Cancelado</option></select>
+      <input type="month" id="fin-mes-l" value="${new Date().toISOString().slice(0,7)}" onchange="loadLancamentos()" style="width:160px"/>
+    </div>
+    <div class="card"><div id="lanc-table">${spin()}</div></div>`;
+    loadLancamentos();
+  }
+}
+
+async function loadResumo(){
+  const mes=document.getElementById('fin-mes')?.value||'';
+  const el=document.getElementById('resumo-content');
+  el.innerHTML=spin();
+  try{
+    const r=await api('GET',`/financeiro/resumo${mes?'?mes='+mes:''}`);
+    el.innerHTML=`
+      <div class="resumo-grid">
+        <div class="resumo-card"><div class="resumo-label">Total Entradas</div><div class="resumo-value stat-green">${fmt(r.entradas_total)}</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Pagas: ${fmt(r.entradas_pagas)} | Pendentes: ${fmt(r.entradas_pendentes)}</div></div>
+        <div class="resumo-card"><div class="resumo-label">Total Saídas</div><div class="resumo-value stat-red">${fmt(r.saidas_total)}</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Pagas: ${fmt(r.saidas_pagas)} | Pendentes: ${fmt(r.saidas_pendentes)}</div></div>
+        <div class="resumo-card"><div class="resumo-label">Saldo Realizado</div><div class="resumo-value ${r.saldo_realizado>=0?'stat-green':'stat-red'}">${fmt(r.saldo_realizado)}</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Previsto: ${fmt(r.saldo_previsto)}</div></div>
+      </div>`;
+  }catch(e){el.innerHTML=`<div style="color:var(--danger)">${e.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`}
+}
+
+async function loadLancamentos(){
+  const tipo=document.getElementById('fin-tipo')?.value||'';
+  const status=document.getElementById('fin-status')?.value||'';
+  const mes=document.getElementById('fin-mes-l')?.value||'';
+  const el=document.getElementById('lanc-table');
+  el.innerHTML=spin();
+  let q=''; const p=[];
+  if(tipo) p.push('tipo='+tipo);
+  if(status) p.push('status='+status);
+  if(mes) p.push('mes='+mes);
+  if(p.length) q='?'+p.join('&');
+  const rows=await api('GET','/financeiro/lancamentos'+q).catch(()=>[]);
+  if(!rows.length){el.innerHTML=empty('💰','Nenhum lançamento');return}
+  el.innerHTML=`<table><thead><tr><th>#</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th>Data</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.map(l=>`<tr>
+      <td class="mono" style="color:var(--text3)">${l.id}</td>
+      <td><span class="badge badge-${l.tipo==='ENTRADA'?'entrada':'saida'}">${l.tipo}</span></td>
+      <td><span style="font-size:12px;color:var(--text2)">${l.categoria}</span></td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.descricao||'—'}${l.cliente_nome?`<br><span style="font-size:11px;color:var(--text3)">${l.cliente_nome}</span>`:''}${l.proprietario_nome?`<br><span style="font-size:11px;color:var(--text3)">${l.proprietario_nome}</span>`:''}</td>
+      <td class="mono" style="${l.tipo==='ENTRADA'?'color:var(--success)':'color:var(--danger)'}">${fmt(l.valor_cents)}</td>
+      <td>${fmtDate(l.data_lancamento)}</td>
+      <td>${bStatus(l.status)}</td>
+      <td><div class="actions-cell">
+        ${l.status==='PENDENTE'?`<button class="btn btn-success btn-sm" onclick="pagarLancamento(${l.id})">Pagar</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteLancamento(${l.id})">✕</button>
+      </div></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+async function pagarLancamento(id){
+  const hoje=new Date().toISOString().slice(0,10);
+  const dt=prompt('Data do pagamento (AAAA-MM-DD):',hoje);
+  if(!dt) return;
+  await api('POST',`/financeiro/lancamentos/${id}/pagar`,{data_pagamento:dt}).catch(e=>alert(e.message));
+  loadLancamentos();
+  loadResumo();
 }
 async function deleteLancamento(id){if(!confirm('Excluir lançamento?'))return;await api('DELETE',`/financeiro/lancamentos/${id}`).catch(e=>alert(e.message));loadLancamentos()}
 

@@ -257,99 +257,91 @@ def add_collaborator():
         return jsonify({'error': 'Colaborador already exists'}), 400
     finally: conn.close()
 
-# ── Financeiro: lançamentos ────────────────────────────────────
+# ── Financeiro: resumo baseado em parcelas ────────────────────
+@app.route('/api/financeiro/resumo', methods=['GET'])
+@token_required
+def resumo_financeiro():
+    mes  = request.args.get('mes')  # YYYY-MM, opcional
+    conn = get_db()
+
+    def _sum_parcelas(tipo, status=None, mes=None):
+        q = 'SELECT COALESCE(SUM(p.valor_cents),0) FROM parcelas p WHERE p.tipo=?'
+        params = [tipo]
+        if status:
+            q += ' AND p.status=?'; params.append(status)
+        if mes:
+            q += ' AND strftime("%Y-%m", p.data_vencimento)=?'; params.append(mes)
+        return conn.execute(q, params).fetchone()[0]
+
+    resultado = {
+        'entradas_total':     _sum_parcelas('RECEBIMENTO', mes=mes),
+        'entradas_pagas':     _sum_parcelas('RECEBIMENTO', 'PAGO', mes),
+        'entradas_pendentes': _sum_parcelas('RECEBIMENTO', 'PENDENTE', mes),
+        'saidas_total':       _sum_parcelas('REPASSE', mes=mes),
+        'saidas_pagas':       _sum_parcelas('REPASSE', 'PAGO', mes),
+        'saidas_pendentes':   _sum_parcelas('REPASSE', 'PENDENTE', mes),
+        'saldo_realizado':    _sum_parcelas('RECEBIMENTO','PAGO',mes) - _sum_parcelas('REPASSE','PAGO',mes),
+        'saldo_previsto':     _sum_parcelas('RECEBIMENTO',mes=mes) - _sum_parcelas('REPASSE',mes=mes),
+        'mes': mes or 'todos',
+    }
+    conn.close()
+    return jsonify(resultado)
+
+# ── Financeiro: parcelas como lancamentos (visao consolidada) ──
 @app.route('/api/financeiro/lancamentos', methods=['GET'])
 @token_required
 def list_lancamentos():
-    conn  = get_db()
-    tipo  = request.args.get('tipo')
-    mes   = request.args.get('mes')   # YYYY-MM
+    conn   = get_db()
+    tipo   = request.args.get('tipo')    # RECEBIMENTO ou REPASSE
+    mes    = request.args.get('mes')     # YYYY-MM
     status = request.args.get('status')
-    q  = '''SELECT l.*, c.nome as cliente_nome, p.nome as proprietario_nome
-            FROM lancamentos l
-            LEFT JOIN clientes c ON c.id = l.cliente_id
-            LEFT JOIN proprietarios p ON p.id = l.proprietario_id
-            WHERE 1=1'''
+
+    q = '''SELECT p.*,
+               ct.cliente_id, ct.proprietario_id,
+               cl.nome as cliente_nome,
+               pr.nome as proprietario_nome,
+               po.nome as ponto_nome
+           FROM parcelas p
+           JOIN contratos ct ON ct.id = p.contrato_id
+           LEFT JOIN clientes cl      ON cl.id = ct.cliente_id
+           LEFT JOIN proprietarios pr ON pr.id = ct.proprietario_id
+           LEFT JOIN pontos po        ON po.id = ct.ponto_id
+           WHERE 1=1'''
     params = []
-    if tipo:   q += ' AND l.tipo=?';   params.append(tipo)
-    if mes:    q += ' AND strftime("%Y-%m", l.data_lancamento)=?'; params.append(mes)
-    if status: q += ' AND l.status=?'; params.append(status)
-    q += ' ORDER BY l.data_lancamento DESC'
+    if tipo:   q += ' AND p.tipo=?';   params.append(tipo)
+    if status: q += ' AND p.status=?'; params.append(status)
+    if mes:    q += ' AND strftime("%Y-%m", p.data_vencimento)=?'; params.append(mes)
+    q += ' ORDER BY p.data_vencimento ASC'
+
     rows = conn.execute(q, params).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
-@app.route('/api/financeiro/lancamentos', methods=['POST'])
+@app.route('/api/financeiro/lancamentos/<int:lid>/pagar', methods=['POST'])
 @token_required
-def add_lancamento():
-    d = request.get_json() or {}
-    required = ['tipo','categoria','valor_cents','data_lancamento']
-    for f in required:
-        if not d.get(f): return jsonify({'error': f'{f} required'}), 400
-    if d['tipo'] not in ('ENTRADA','SAIDA'):
-        return jsonify({'error': 'tipo must be ENTRADA or SAIDA'}), 400
-    conn = get_db(); cur = conn.cursor()
-    cur.execute('''INSERT INTO lancamentos
-        (tipo,categoria,descricao,valor_cents,data_lancamento,
-         contrato_id,cliente_id,proprietario_id,status)
-        VALUES (?,?,?,?,?,?,?,?,?)''',
-        (d['tipo'], d['categoria'], d.get('descricao'), d['valor_cents'],
-         d['data_lancamento'], d.get('contrato_id'), d.get('cliente_id'),
-         d.get('proprietario_id'), d.get('status','PENDENTE')))
-    conn.commit()
-    row = conn.execute('SELECT * FROM lancamentos WHERE id=?',(cur.lastrowid,)).fetchone()
-    conn.close(); return jsonify(dict(row))
-
-@app.route('/api/financeiro/lancamentos/<int:lid>', methods=['PUT'])
-@token_required
-def update_lancamento(lid):
-    if not row_exists('lancamentos', lid):
-        return jsonify({'error': 'Not found'}), 404
-    d = request.get_json() or {}
+def pagar_lancamento(lid):
+    d    = request.get_json() or {}
+    hoje = d.get('data_pagamento') or datetime.date.today().isoformat()
     conn = get_db()
-    conn.execute('''UPDATE lancamentos SET
-        status=COALESCE(?,status), data_pagamento=COALESCE(?,data_pagamento),
-        descricao=COALESCE(?,descricao), valor_cents=COALESCE(?,valor_cents)
-        WHERE id=?''',
-        (d.get('status'), d.get('data_pagamento'),
-         d.get('descricao'), d.get('valor_cents'), lid))
+    row  = conn.execute('SELECT id FROM parcelas WHERE id=?', (lid,)).fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'Not found'}), 404
+    conn.execute("UPDATE parcelas SET status='PAGO', data_pagamento=? WHERE id=?", (hoje, lid))
     conn.commit()
-    row = conn.execute('SELECT * FROM lancamentos WHERE id=?',(lid,)).fetchone()
-    conn.close(); return jsonify(dict(row))
+    updated = conn.execute('SELECT * FROM parcelas WHERE id=?', (lid,)).fetchone()
+    conn.close()
+    return jsonify(dict(updated))
 
 @app.route('/api/financeiro/lancamentos/<int:lid>', methods=['DELETE'])
 @token_required
 def delete_lancamento(lid):
-    if not row_exists('lancamentos', lid):
-        return jsonify({'error': 'Not found'}), 404
     conn = get_db()
-    conn.execute('DELETE FROM lancamentos WHERE id=?',(lid,))
+    row  = conn.execute('SELECT id FROM parcelas WHERE id=?', (lid,)).fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'Not found'}), 404
+    conn.execute("UPDATE parcelas SET status='CANCELADO' WHERE id=?", (lid,))
     conn.commit(); conn.close()
     return jsonify({'deleted': lid})
-
-@app.route('/api/financeiro/resumo', methods=['GET'])
-@token_required
-def resumo_financeiro():
-    mes = request.args.get('mes')  # YYYY-MM, opcional
-    conn = get_db()
-    def _sum(tipo, status=None, mes=None):
-        q = 'SELECT COALESCE(SUM(valor_cents),0) FROM lancamentos WHERE tipo=?'
-        p = [tipo]
-        if status: q += ' AND status=?'; p.append(status)
-        if mes: q += ' AND strftime("%Y-%m",data_lancamento)=?'; p.append(mes)
-        return conn.execute(q, p).fetchone()[0]
-    resultado = {
-        'entradas_total':    _sum('ENTRADA', mes=mes),
-        'entradas_pagas':    _sum('ENTRADA', 'PAGO', mes),
-        'entradas_pendentes':_sum('ENTRADA', 'PENDENTE', mes),
-        'saidas_total':      _sum('SAIDA', mes=mes),
-        'saidas_pagas':      _sum('SAIDA', 'PAGO', mes),
-        'saidas_pendentes':  _sum('SAIDA', 'PENDENTE', mes),
-        'saldo_realizado':   _sum('ENTRADA','PAGO',mes) - _sum('SAIDA','PAGO',mes),
-        'saldo_previsto':    _sum('ENTRADA',mes=mes) - _sum('SAIDA',mes=mes),
-        'mes': mes or 'todos',
-    }
-    conn.close(); return jsonify(resultado)
 
 # ── Proxy CNPJ (BrasilAPI) ────────────────────────────────────
 # Proxy interno evita bloqueio CORS/TLS quando rodando como .exe
