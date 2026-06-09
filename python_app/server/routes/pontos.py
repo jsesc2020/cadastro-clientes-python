@@ -19,8 +19,8 @@ def add_ponto():
     nome = d.get('nome')
     lat  = d.get('latitude')
     lng  = d.get('longitude')
-    if not nome or lat is None or lng is None:
-        return jsonify({'error':'nome, latitude and longitude required'}),400
+    if not nome:
+        return jsonify({'error':'Nome obrigatorio'}),400
     prop_id = d.get('proprietario_id')
     if prop_id and not row_exists('proprietarios', prop_id):
         return jsonify({'error':'Proprietario not found'}),400

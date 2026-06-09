@@ -5,13 +5,18 @@ import time
 import signal
 from pathlib import Path
 
-# ── Oculta janela do CMD no Windows ───────────────────────────
+# ── Oculta janela CMD imediatamente (Windows) ─────────────────
+# Deve ser a primeira coisa a executar, antes de qualquer import
 if sys.platform == 'win32':
-    import ctypes
-    # SW_HIDE = 0: oculta a janela do console completamente
-    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+    try:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
 
-# ── Corrige diretorio de trabalho ─────────────────────────────
+# ── Corrige diretório de trabalho ─────────────────────────────
 if getattr(sys, 'frozen', False):
     os.chdir(Path(sys.executable).parent)
 
@@ -20,29 +25,23 @@ import webbrowser
 
 PORT = int(os.environ.get('PORT', 5000))
 
-# ── Detecta encerramento do navegador ─────────────────────────
-# Monitora o endpoint /api/ping: se o navegador parar de chamar
-# por mais de 30 segundos, encerra o processo inteiro
-_last_ping = time.time()
-_TIMEOUT = 30  # segundos sem ping = navegador fechado
+# ── Watchdog: encerra quando navegador fecha ───────────────────
+_last_ping = [time.time()]
+_GRACE     = 60   # segundos iniciais antes de monitorar
+_TIMEOUT   = 30   # segundos sem ping = navegador fechado
 
-@app.route('/api/ping', methods=['GET'])
+@app.route('/api/ping', methods=['GET', 'POST'])
 def ping():
-    global _last_ping
-    _last_ping = time.time()
+    _last_ping[0] = time.time()
     return ('', 204)
 
 def _watchdog():
-    """Thread que encerra o app quando o navegador fecha."""
-    global _last_ping
-    # Aguarda o navegador conectar pela primeira vez (60s de graca)
-    time.sleep(60)
+    time.sleep(_GRACE)
     while True:
         time.sleep(5)
-        if time.time() - _last_ping > _TIMEOUT:
-            # Navegador fechado: encerra o processo
+        if time.time() - _last_ping[0] > _TIMEOUT:
             os.kill(os.getpid(), signal.SIGTERM)
-            break
+            return
 
 def _open_browser():
     time.sleep(1.5)
@@ -50,15 +49,6 @@ def _open_browser():
 
 if __name__ == '__main__':
     init_db()
-
-    # Injeta o script de ping no frontend via middleware seria complexo,
-    # então o ping é chamado pelo frontend via JS (ver index.html)
     threading.Thread(target=_open_browser, daemon=True).start()
     threading.Thread(target=_watchdog,     daemon=False).start()
-
-    app.run(
-        host='127.0.0.1',
-        port=PORT,
-        debug=False,
-        use_reloader=False
-    )
+    app.run(host='127.0.0.1', port=PORT, debug=False, use_reloader=False)

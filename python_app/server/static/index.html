@@ -595,13 +595,49 @@ function parseCoord(val){
   return parseFloat(String(val).replace(',','.'));
 }
 async function savePonto(id){
-  const body={nome:v('p-nome'),tipo:v('p-tipo'),status:v('p-status'),
-    latitude:parseCoord(document.getElementById('p-lat').value),
-    longitude:parseCoord(document.getElementById('p-lng').value),
+  const nome = v('p-nome');
+  if(!nome){alert('Nome é obrigatório');return}
+
+  let lat = parseCoord(document.getElementById('p-lat').value);
+  let lng = parseCoord(document.getElementById('p-lng').value);
+
+  // Se lat/lng ainda estão vazios, tenta geocodificar agora (sincrono)
+  if(isNaN(lat)||isNaN(lng)){
+    const log=v('p-logradouro'), num=v('p-numero'), cid=v('p-cidade'), est=v('p-estado');
+    if(log && cid){
+      const btn = document.querySelector('[onclick*="savePonto"]');
+      if(btn){btn.textContent='Buscando coordenadas...';btn.disabled=true;}
+      try{
+        const q=`${log} ${num}, ${cid}, ${est}, Brasil`;
+        const data=await api('GET',`/util/geocode?q=${encodeURIComponent(q)}`);
+        if(Array.isArray(data)&&data.length){
+          lat=parseFloat(data[0].lat);
+          lng=parseFloat(data[0].lon);
+          document.getElementById('p-lat').value=lat.toFixed(6);
+          document.getElementById('p-lng').value=lng.toFixed(6);
+          atualizarMapa(lat,lng);
+        }
+      }catch(e){console.warn('Geocode no save falhou:',e.message);}
+      if(btn){btn.textContent=id?'Salvar':'Criar Ponto';btn.disabled=false;}
+    }
+  }
+
+  // Se ainda nao tem coordenadas, permite salvar sem — coordenadas sao opcionais
+  const body={
+    nome, tipo:v('p-tipo'), status:v('p-status'),
+    latitude:isNaN(lat)?null:lat,
+    longitude:isNaN(lng)?null:lng,
     cep:v('p-cep'),logradouro:v('p-logradouro'),numero:v('p-numero'),
-    complemento:v('p-complemento'),bairro:v('p-bairro'),cidade:v('p-cidade'),estado:v('p-estado')};
-  if(!body.nome||isNaN(body.latitude)||isNaN(body.longitude)){alert('Nome, latitude e longitude são obrigatórios');return}
-  try{if(id)await api('PUT',`/pontos/${id}`,body);else await api('POST','/pontos/',body);closeModal();renderPontos()}catch(e){alert(e.message)}
+    complemento:v('p-complemento'),bairro:v('p-bairro'),
+    cidade:v('p-cidade'),estado:v('p-estado')
+  };
+
+  try{
+    if(id) await api('PUT',`/pontos/${id}`,body);
+    else await api('POST','/pontos/',body);
+    closeModal();
+    renderPontos();
+  }catch(e){alert(e.message)}
 }
 async function deletePonto(id){if(!confirm('Excluir este ponto?'))return;await api('DELETE',`/pontos/${id}`).catch(e=>alert(e.message));renderPontos()}
 
@@ -1729,13 +1765,49 @@ function parseCoord(val){
   return parseFloat(String(val).replace(',','.'));
 }
 async function savePonto(id){
-  const body={nome:v('p-nome'),tipo:v('p-tipo'),status:v('p-status'),
-    latitude:parseCoord(document.getElementById('p-lat').value),
-    longitude:parseCoord(document.getElementById('p-lng').value),
+  const nome = v('p-nome');
+  if(!nome){alert('Nome é obrigatório');return}
+
+  let lat = parseCoord(document.getElementById('p-lat').value);
+  let lng = parseCoord(document.getElementById('p-lng').value);
+
+  // Se lat/lng ainda estão vazios, tenta geocodificar agora (sincrono)
+  if(isNaN(lat)||isNaN(lng)){
+    const log=v('p-logradouro'), num=v('p-numero'), cid=v('p-cidade'), est=v('p-estado');
+    if(log && cid){
+      const btn = document.querySelector('[onclick*="savePonto"]');
+      if(btn){btn.textContent='Buscando coordenadas...';btn.disabled=true;}
+      try{
+        const q=`${log} ${num}, ${cid}, ${est}, Brasil`;
+        const data=await api('GET',`/util/geocode?q=${encodeURIComponent(q)}`);
+        if(Array.isArray(data)&&data.length){
+          lat=parseFloat(data[0].lat);
+          lng=parseFloat(data[0].lon);
+          document.getElementById('p-lat').value=lat.toFixed(6);
+          document.getElementById('p-lng').value=lng.toFixed(6);
+          atualizarMapa(lat,lng);
+        }
+      }catch(e){console.warn('Geocode no save falhou:',e.message);}
+      if(btn){btn.textContent=id?'Salvar':'Criar Ponto';btn.disabled=false;}
+    }
+  }
+
+  // Se ainda nao tem coordenadas, permite salvar sem — coordenadas sao opcionais
+  const body={
+    nome, tipo:v('p-tipo'), status:v('p-status'),
+    latitude:isNaN(lat)?null:lat,
+    longitude:isNaN(lng)?null:lng,
     cep:v('p-cep'),logradouro:v('p-logradouro'),numero:v('p-numero'),
-    complemento:v('p-complemento'),bairro:v('p-bairro'),cidade:v('p-cidade'),estado:v('p-estado')};
-  if(!body.nome||isNaN(body.latitude)||isNaN(body.longitude)){alert('Nome, latitude e longitude são obrigatórios');return}
-  try{if(id)await api('PUT',`/pontos/${id}`,body);else await api('POST','/pontos/',body);closeModal();renderPontos()}catch(e){alert(e.message)}
+    complemento:v('p-complemento'),bairro:v('p-bairro'),
+    cidade:v('p-cidade'),estado:v('p-estado')
+  };
+
+  try{
+    if(id) await api('PUT',`/pontos/${id}`,body);
+    else await api('POST','/pontos/',body);
+    closeModal();
+    renderPontos();
+  }catch(e){alert(e.message)}
 }
 async function deletePonto(id){if(!confirm('Excluir este ponto?'))return;await api('DELETE',`/pontos/${id}`).catch(e=>alert(e.message));renderPontos()}
 
