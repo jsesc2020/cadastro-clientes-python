@@ -140,6 +140,9 @@ def init_db():
                 ('tipo_repasse','TEXT'),('dia_vencimento','INTEGER'),
                 ('dia_pagamento','INTEGER'),('observacoes','TEXT')]:
         _col('contratos', row[0], row[1])
+    # taxa bancaria em parcelas e lancamentos
+    _col('parcelas',    'taxa_cents', 'INTEGER')
+    _col('lancamentos', 'taxa_cents', 'INTEGER')
 
     conn.commit()
     conn.close()
@@ -258,110 +261,211 @@ def add_collaborator():
         return jsonify({'error': 'Colaborador already exists'}), 400
     finally: conn.close()
 
-# ── Financeiro: resumo baseado em parcelas ────────────────────
-@app.route('/api/financeiro/resumo', methods=['GET'])
-@token_required
-def resumo_financeiro():
-    mes  = request.args.get('mes')  # YYYY-MM, opcional
-    conn = get_db()
+# ── Schema: tabela gastos (lancamentos manuais) ──────────────
+# A tabela lancamentos do repo armazena gastos operacionais manuais
+# As parcelas de contratos ficam na tabela parcelas
+# O resumo consolida ambas
 
-    def _sum_parcelas(tipo, status=None, mes=None):
-        q = 'SELECT COALESCE(SUM(p.valor_cents),0) FROM parcelas p WHERE p.tipo=?'
-        params = [tipo]
-        if status:
-            q += ' AND p.status=?'; params.append(status)
-        if mes:
-            q += ' AND strftime("%Y-%m", p.data_vencimento)=?'; params.append(mes)
-        return conn.execute(q, params).fetchone()[0]
-
-    resultado = {
-        'entradas_total':     _sum_parcelas('RECEBIMENTO', mes=mes),
-        'entradas_pagas':     _sum_parcelas('RECEBIMENTO', 'PAGO', mes),
-        'entradas_pendentes': _sum_parcelas('RECEBIMENTO', 'PENDENTE', mes),
-        'saidas_total':       _sum_parcelas('REPASSE', mes=mes),
-        'saidas_pagas':       _sum_parcelas('REPASSE', 'PAGO', mes),
-        'saidas_pendentes':   _sum_parcelas('REPASSE', 'PENDENTE', mes),
-        'saldo_realizado':    _sum_parcelas('RECEBIMENTO','PAGO',mes) - _sum_parcelas('REPASSE','PAGO',mes),
-        'saldo_previsto':     _sum_parcelas('RECEBIMENTO',mes=mes) - _sum_parcelas('REPASSE',mes=mes),
-        'mes': mes or 'todos',
-    }
-    conn.close()
-    return jsonify(resultado)
-
-# ── Financeiro: parcelas como lancamentos (visao consolidada) ──
+# ── Financeiro: lancamentos manuais (gastos e receitas avulsas) ─
 @app.route('/api/financeiro/lancamentos', methods=['GET'])
 @token_required
 def list_lancamentos():
     conn   = get_db()
-    tipo   = request.args.get('tipo')    # RECEBIMENTO ou REPASSE
-    mes    = request.args.get('mes')     # YYYY-MM
+    tipo   = request.args.get('tipo')
+    mes    = request.args.get('mes')
     status = request.args.get('status')
+    q = """SELECT l.*,
+               c.nome  as cliente_nome,
+               pr.nome as proprietario_nome
+           FROM lancamentos l
+           LEFT JOIN clientes c      ON c.id  = l.cliente_id
+           LEFT JOIN proprietarios pr ON pr.id = l.proprietario_id
+           WHERE 1=1"""
+    params = []
+    if tipo:   q += ' AND l.tipo=?';   params.append(tipo)
+    if status: q += ' AND l.status=?'; params.append(status)
+    if mes:    q += ' AND strftime("%Y-%m", l.data_lancamento)=?'; params.append(mes)
+    q += ' ORDER BY l.data_lancamento DESC'
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
-    q = '''SELECT p.*,
+@app.route('/api/financeiro/lancamentos', methods=['POST'])
+@token_required
+def add_lancamento():
+    d = request.get_json() or {}
+    if not d.get('tipo') or not d.get('categoria') or not d.get('valor_cents'):
+        return jsonify({'error': 'tipo, categoria e valor_cents obrigatorios'}), 400
+    if d['tipo'] not in ('ENTRADA', 'SAIDA'):
+        return jsonify({'error': 'tipo deve ser ENTRADA ou SAIDA'}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""INSERT INTO lancamentos
+        (tipo, categoria, descricao, valor_cents, taxa_cents,
+         data_lancamento, contrato_id, cliente_id, proprietario_id, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (d['tipo'], d['categoria'], d.get('descricao'),
+         int(d['valor_cents']), int(d.get('taxa_cents') or 0),
+         d.get('data_lancamento') or datetime.date.today().isoformat(),
+         d.get('contrato_id'), d.get('cliente_id'), d.get('proprietario_id'),
+         d.get('status', 'PAGO')))
+    conn.commit()
+    row = conn.execute('SELECT * FROM lancamentos WHERE id=?', (cur.lastrowid,)).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+@app.route('/api/financeiro/lancamentos/<int:lid>', methods=['PUT'])
+@token_required
+def update_lancamento(lid):
+    if not row_exists('lancamentos', lid):
+        return jsonify({'error': 'Not found'}), 404
+    d = request.get_json() or {}
+    conn = get_db()
+    conn.execute("""UPDATE lancamentos SET
+        status=COALESCE(?,status),
+        data_pagamento=COALESCE(?,data_pagamento),
+        descricao=COALESCE(?,descricao),
+        valor_cents=COALESCE(?,valor_cents),
+        taxa_cents=COALESCE(?,taxa_cents)
+        WHERE id=?""",
+        (d.get('status'), d.get('data_pagamento'),
+         d.get('descricao'), d.get('valor_cents'),
+         d.get('taxa_cents'), lid))
+    conn.commit()
+    row = conn.execute('SELECT * FROM lancamentos WHERE id=?', (lid,)).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+@app.route('/api/financeiro/lancamentos/<int:lid>', methods=['DELETE'])
+@token_required
+def delete_lancamento(lid):
+    if not row_exists('lancamentos', lid):
+        return jsonify({'error': 'Not found'}), 404
+    conn = get_db()
+    conn.execute('DELETE FROM lancamentos WHERE id=?', (lid,))
+    conn.commit(); conn.close()
+    return jsonify({'deleted': lid})
+
+# ── Parcelas: baixa com data retroativa ───────────────────────
+@app.route('/api/financeiro/parcelas', methods=['GET'])
+@token_required
+def list_parcelas_fin():
+    conn   = get_db()
+    tipo   = request.args.get('tipo')
+    mes    = request.args.get('mes')
+    status = request.args.get('status')
+    q = """SELECT p.*,
                ct.cliente_id, ct.proprietario_id,
-               cl.nome as cliente_nome,
-               pr.nome as proprietario_nome,
-               po.nome as ponto_nome
+               cl.nome  as cliente_nome,
+               pr.nome  as proprietario_nome,
+               po.nome  as ponto_nome
            FROM parcelas p
-           JOIN contratos ct ON ct.id = p.contrato_id
-           LEFT JOIN clientes cl      ON cl.id = ct.cliente_id
+           JOIN contratos ct         ON ct.id = p.contrato_id
+           LEFT JOIN clientes cl     ON cl.id = ct.cliente_id
            LEFT JOIN proprietarios pr ON pr.id = ct.proprietario_id
            LEFT JOIN pontos po        ON po.id = ct.ponto_id
-           WHERE 1=1'''
+           WHERE 1=1"""
     params = []
     if tipo:   q += ' AND p.tipo=?';   params.append(tipo)
     if status: q += ' AND p.status=?'; params.append(status)
     if mes:    q += ' AND strftime("%Y-%m", p.data_vencimento)=?'; params.append(mes)
     q += ' ORDER BY p.data_vencimento ASC'
-
     rows = conn.execute(q, params).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
-@app.route('/api/financeiro/lancamentos/<int:lid>/pagar', methods=['POST'])
+@app.route('/api/financeiro/parcelas/<int:pid>/pagar', methods=['POST'])
 @token_required
-def pagar_lancamento(lid):
+def pagar_parcela_fin(pid):
     d    = request.get_json() or {}
-    hoje = d.get('data_pagamento') or datetime.date.today().isoformat()
+    # Permite data retroativa: usa a data informada ou hoje
+    data = d.get('data_pagamento') or datetime.date.today().isoformat()
+    taxa = int(d.get('taxa_cents') or 0)
     conn = get_db()
-    row  = conn.execute('SELECT id FROM parcelas WHERE id=?', (lid,)).fetchone()
+    row  = conn.execute('SELECT * FROM parcelas WHERE id=?', (pid,)).fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'Not found'}), 404
-    conn.execute("UPDATE parcelas SET status='PAGO', data_pagamento=? WHERE id=?", (hoje, lid))
+        conn.close(); return jsonify({'error': 'Parcela nao encontrada'}), 404
+    conn.execute("""UPDATE parcelas SET
+        status='PAGO', data_pagamento=?,
+        taxa_cents=COALESCE(?,taxa_cents), observacoes=COALESCE(?,observacoes)
+        WHERE id=?""",
+        (data, taxa if taxa else None, d.get('observacoes'), pid))
     conn.commit()
-    updated = conn.execute('SELECT * FROM parcelas WHERE id=?', (lid,)).fetchone()
+    updated = conn.execute('SELECT * FROM parcelas WHERE id=?', (pid,)).fetchone()
     conn.close()
     return jsonify(dict(updated))
 
-@app.route('/api/financeiro/lancamentos/<int:lid>', methods=['DELETE'])
+@app.route('/api/financeiro/parcelas/<int:pid>', methods=['PUT'])
 @token_required
-def delete_lancamento(lid):
+def update_parcela_fin(pid):
+    d    = request.get_json() or {}
     conn = get_db()
-    row  = conn.execute('SELECT id FROM parcelas WHERE id=?', (lid,)).fetchone()
+    row  = conn.execute('SELECT * FROM parcelas WHERE id=?', (pid,)).fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'Not found'}), 404
-    conn.execute("UPDATE parcelas SET status='CANCELADO' WHERE id=?", (lid,))
-    conn.commit(); conn.close()
-    return jsonify({'deleted': lid})
+        conn.close(); return jsonify({'error': 'Parcela nao encontrada'}), 404
+    conn.execute("""UPDATE parcelas SET
+        status=COALESCE(?,status),
+        data_vencimento=COALESCE(?,data_vencimento),
+        data_pagamento=COALESCE(?,data_pagamento),
+        valor_cents=COALESCE(?,valor_cents),
+        taxa_cents=COALESCE(?,taxa_cents),
+        observacoes=COALESCE(?,observacoes)
+        WHERE id=?""",
+        (d.get('status'), d.get('data_vencimento'), d.get('data_pagamento'),
+         d.get('valor_cents'), d.get('taxa_cents'), d.get('observacoes'), pid))
+    conn.commit()
+    updated = conn.execute('SELECT * FROM parcelas WHERE id=?', (pid,)).fetchone()
+    conn.close()
+    return jsonify(dict(updated))
 
-# ── Proxy Nominatim (geocodificação) ─────────────────────────
-@app.route('/api/util/geocode', methods=['GET'])
+# ── Resumo financeiro consolidado ────────────────────────────
+@app.route('/api/financeiro/resumo', methods=['GET'])
 @token_required
-def proxy_geocode():
-    q = request.args.get('q', '').strip()
-    if not q:
-        return jsonify({'error': 'q required'}), 400
-    url = f'https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(q)}&limit=1'
-    try:
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'MidiaControl/1.0',
-            'Accept-Language': 'pt-BR'
-        })
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = _json.loads(resp.read().decode('utf-8'))
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
+def resumo_financeiro():
+    mes  = request.args.get('mes')
+    conn = get_db()
+
+    def _parc(tipo, status=None, m=None):
+        q = 'SELECT COALESCE(SUM(valor_cents+COALESCE(taxa_cents,0)),0) FROM parcelas WHERE tipo=?'
+        p = [tipo]
+        if status: q += ' AND status=?'; p.append(status)
+        if m:      q += ' AND strftime("%Y-%m",data_vencimento)=?'; p.append(m)
+        return conn.execute(q, p).fetchone()[0]
+
+    def _lanc(tipo, status=None, m=None):
+        q = 'SELECT COALESCE(SUM(valor_cents+COALESCE(taxa_cents,0)),0) FROM lancamentos WHERE tipo=?'
+        p = [tipo]
+        if status: q += ' AND status=?'; p.append(status)
+        if m:      q += ' AND strftime("%Y-%m",data_lancamento)=?'; p.append(m)
+        return conn.execute(q, p).fetchone()[0]
+
+    resultado = {
+        # Recebimentos de contratos (parcelas)
+        'recebimentos_total':     _parc('RECEBIMENTO', m=mes),
+        'recebimentos_pagos':     _parc('RECEBIMENTO', 'PAGO', mes),
+        'recebimentos_pendentes': _parc('RECEBIMENTO', 'PENDENTE', mes),
+        # Repasses a proprietarios (parcelas)
+        'repasses_total':         _parc('REPASSE', m=mes),
+        'repasses_pagos':         _parc('REPASSE', 'PAGO', mes),
+        'repasses_pendentes':     _parc('REPASSE', 'PENDENTE', mes),
+        # Entradas avulsas (lancamentos manuais)
+        'entradas_total':         _lanc('ENTRADA', m=mes),
+        'entradas_pagas':         _lanc('ENTRADA', 'PAGO', mes),
+        # Saidas avulsas: gastos operacionais, taxas bancarias, etc.
+        'saidas_total':           _lanc('SAIDA', m=mes),
+        'saidas_pagas':           _lanc('SAIDA', 'PAGO', mes),
+        # Saldos
+        'saldo_realizado': (
+            _parc('RECEBIMENTO','PAGO',mes) + _lanc('ENTRADA','PAGO',mes)
+            - _parc('REPASSE','PAGO',mes) - _lanc('SAIDA','PAGO',mes)
+        ),
+        'saldo_previsto': (
+            _parc('RECEBIMENTO',m=mes) + _lanc('ENTRADA',m=mes)
+            - _parc('REPASSE',m=mes) - _lanc('SAIDA',m=mes)
+        ),
+        'mes': mes or 'todos',
+    }
+    conn.close()
+    return jsonify(resultado)
 
 # ── Proxy CNPJ (BrasilAPI) ────────────────────────────────────
 # Proxy interno evita bloqueio CORS/TLS quando rodando como .exe
