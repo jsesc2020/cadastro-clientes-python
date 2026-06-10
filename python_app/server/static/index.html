@@ -170,29 +170,29 @@ setInterval(async () => {
   }
 }, 10000); // a cada 10 segundos
 
-// ── Limpa sessão ao fechar/sair da aba ────────────────────────
-window.addEventListener('beforeunload', () => {
-  sessionStorage.removeItem('mc_token');
-  sessionStorage.removeItem('mc_email');
-  // Envia ping de saída de forma sincrona (best-effort)
+// Envia beacon ao fechar (best-effort para watchdog)
+// NAO limpa sessionStorage aqui - isso causaria logout ao trocar de aba
+window.addEventListener('pagehide', () => {
   try { navigator.sendBeacon('/api/ping'); } catch(e) {}
 });
 
-// Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
-// Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
+// Inicializa sessao
 (function() {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('boot') === '1') {
-    // Nova execucao do .exe: apaga credenciais da sessao anterior
-    sessionStorage.removeItem('mc_token');
-    sessionStorage.removeItem('mc_email');
-    // Remove o parametro da URL sem recarregar
-    window.history.replaceState({}, '', '/');
+  const isBoot = params.get('boot') === '1';
+  const alreadyBooted = sessionStorage.getItem('mc_booted') === '1';
+
+  if (isBoot && !alreadyBooted) {
+    // Primeira abertura do .exe: limpa credenciais antigas
+    sessionStorage.clear();
+    sessionStorage.setItem('mc_booted', '1');
   } else {
-    // Recarregamento normal: restaura sessao se existir
+    // Recarregamento normal dentro da mesma sessao: restaura credenciais
     TOKEN = sessionStorage.getItem('mc_token') || '';
     USER_EMAIL = sessionStorage.getItem('mc_email') || '';
   }
+  // Remove ?boot=1 da URL sem recarregar
+  if (isBoot) window.history.replaceState({}, '', '/');
 })();
 
 // ── API ──────────────────────────────────────────────────────
@@ -429,7 +429,12 @@ async function doAuth(){
   }catch(e){showAlert(alertEl,e.message,'error')}
 }
 function showAlert(el,msg,type){el.innerHTML=`<div class="alert alert-${type}">${msg}</div>`;setTimeout(()=>el.innerHTML='',5000)}
-function logout(){TOKEN='';USER_EMAIL='';sessionStorage.removeItem('mc_token');sessionStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
+function logout(){
+  TOKEN=''; USER_EMAIL='';
+  sessionStorage.clear(); // limpa tudo incluindo mc_booted
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+}
 function startApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';document.getElementById('sidebar-user').textContent=USER_EMAIL;navigate('dashboard')}
 if(TOKEN) startApp();
 
@@ -1340,29 +1345,29 @@ setInterval(async () => {
   }
 }, 10000); // a cada 10 segundos
 
-// ── Limpa sessão ao fechar/sair da aba ────────────────────────
-window.addEventListener('beforeunload', () => {
-  sessionStorage.removeItem('mc_token');
-  sessionStorage.removeItem('mc_email');
-  // Envia ping de saída de forma sincrona (best-effort)
+// Envia beacon ao fechar (best-effort para watchdog)
+// NAO limpa sessionStorage aqui - isso causaria logout ao trocar de aba
+window.addEventListener('pagehide', () => {
   try { navigator.sendBeacon('/api/ping'); } catch(e) {}
 });
 
-// Se o programa foi aberto pelo executavel (?boot=1), limpa sessao anterior
-// Se nao tem boot, restaura sessao existente (recarregamento normal da pagina)
+// Inicializa sessao
 (function() {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('boot') === '1') {
-    // Nova execucao do .exe: apaga credenciais da sessao anterior
-    sessionStorage.removeItem('mc_token');
-    sessionStorage.removeItem('mc_email');
-    // Remove o parametro da URL sem recarregar
-    window.history.replaceState({}, '', '/');
+  const isBoot = params.get('boot') === '1';
+  const alreadyBooted = sessionStorage.getItem('mc_booted') === '1';
+
+  if (isBoot && !alreadyBooted) {
+    // Primeira abertura do .exe: limpa credenciais antigas
+    sessionStorage.clear();
+    sessionStorage.setItem('mc_booted', '1');
   } else {
-    // Recarregamento normal: restaura sessao se existir
+    // Recarregamento normal dentro da mesma sessao: restaura credenciais
     TOKEN = sessionStorage.getItem('mc_token') || '';
     USER_EMAIL = sessionStorage.getItem('mc_email') || '';
   }
+  // Remove ?boot=1 da URL sem recarregar
+  if (isBoot) window.history.replaceState({}, '', '/');
 })();
 
 // ── API ──────────────────────────────────────────────────────
@@ -1599,7 +1604,12 @@ async function doAuth(){
   }catch(e){showAlert(alertEl,e.message,'error')}
 }
 function showAlert(el,msg,type){el.innerHTML=`<div class="alert alert-${type}">${msg}</div>`;setTimeout(()=>el.innerHTML='',5000)}
-function logout(){TOKEN='';USER_EMAIL='';sessionStorage.removeItem('mc_token');sessionStorage.removeItem('mc_email');document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex'}
+function logout(){
+  TOKEN=''; USER_EMAIL='';
+  sessionStorage.clear(); // limpa tudo incluindo mc_booted
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+}
 function startApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='block';document.getElementById('sidebar-user').textContent=USER_EMAIL;navigate('dashboard')}
 if(TOKEN) startApp();
 
