@@ -113,10 +113,29 @@ def init_db():
         competencia TEXT NOT NULL,
         data_vencimento DATE NOT NULL,
         valor_cents INTEGER NOT NULL,
+        taxa_cents INTEGER NOT NULL DEFAULT 0,
         status TEXT DEFAULT 'PENDENTE' CHECK(status IN ('PENDENTE','PAGO','CANCELADO','ATRASADO')),
         data_pagamento DATE, observacoes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(contrato_id) REFERENCES contratos(id))""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS lancamentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT NOT NULL CHECK(tipo IN ('ENTRADA','SAIDA')),
+        categoria TEXT NOT NULL,
+        descricao TEXT,
+        valor_cents INTEGER NOT NULL DEFAULT 0,
+        taxa_cents INTEGER NOT NULL DEFAULT 0,
+        data_lancamento DATE NOT NULL,
+        contrato_id INTEGER,
+        cliente_id INTEGER,
+        proprietario_id INTEGER,
+        status TEXT DEFAULT 'PAGO' CHECK(status IN ('PENDENTE','PAGO','CANCELADO')),
+        data_pagamento DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(contrato_id) REFERENCES contratos(id),
+        FOREIGN KEY(cliente_id) REFERENCES clientes(id),
+        FOREIGN KEY(proprietario_id) REFERENCES proprietarios(id))""")
 
     # Config defaults
     cur.execute("INSERT OR IGNORE INTO config VALUES ('dia_vencimento_locatario','25','Dia do vencimento das parcelas dos clientes')")
