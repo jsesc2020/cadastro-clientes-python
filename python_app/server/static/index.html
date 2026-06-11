@@ -571,15 +571,21 @@ function openPontoModal(p){
       <button type="button" class="btn btn-blue btn-sm" style="margin-top:20px;padding:10px 14px" onclick="buscarCEP('p-',true)">🔍 Buscar CEP</button>
     </div>
     <div class="form-row" style="margin-top:11px">
-      <div class="form-group"><label>Logradouro</label><input id="p-logradouro" value="${p?.logradouro||''}" onchange="geocodificarEndereco('p-')"/></div>
-      <div class="form-group"><label>Número</label><input id="p-numero" value="${p?.numero||''}" onchange="geocodificarEndereco('p-')"/></div>
+      <div class="form-group"><label>Logradouro</label>
+        <input id="p-logradouro" value="${p?.logradouro||''}"
+          onblur="if(this.value.trim()) geocodificarEndereco('p-')"/></div>
+      <div class="form-group"><label>Número</label>
+        <input id="p-numero" value="${p?.numero||''}"
+          onblur="if(this.value.trim()) geocodificarEndereco('p-')"
+          placeholder="285"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Complemento</label><input id="p-complemento" value="${p?.complemento||''}"/></div>
       <div class="form-group"><label>Bairro</label><input id="p-bairro" value="${p?.bairro||''}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Cidade</label><input id="p-cidade" value="${p?.cidade||''}" onchange="geocodificarEndereco('p-')"/></div>
+      <div class="form-group"><label>Cidade</label>
+        <input id="p-cidade" value="${p?.cidade||''}"/></div>
       <div class="form-group"><label>Estado</label>
         <select id="p-estado">${['','AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s=>`<option ${p?.estado===s?'selected':''}>${s}</option>`).join('')}</select>
       </div>
