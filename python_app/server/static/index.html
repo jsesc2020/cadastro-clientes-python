@@ -284,32 +284,41 @@ function maskDoc(el){
 
 // ── Geocodificação Nominatim (OSM) ────────────────────────────
 async function geocodificarEndereco(prefix) {
-  const log = document.getElementById(prefix+'logradouro')?.value||'';
-  const num = document.getElementById(prefix+'numero')?.value||'';
-  const cid = document.getElementById(prefix+'cidade')?.value||'';
-  const est = document.getElementById(prefix+'estado')?.value||'';
+  const log = (document.getElementById(prefix+'logradouro')?.value||'').trim();
+  const num = (document.getElementById(prefix+'numero')?.value||'').trim();
+  const bai = (document.getElementById(prefix+'bairro')?.value||'').trim();
+  const cid = (document.getElementById(prefix+'cidade')?.value||'').trim();
+  const est = (document.getElementById(prefix+'estado')?.value||'').trim();
   if (!log || !cid) return;
   const stEl = document.getElementById(prefix+'cep-status');
-  if (stEl) { stEl.textContent = '🗺 Localizando no mapa...'; stEl.style.color = 'var(--text3)'; }
-  const q = `${log} ${num}, ${cid}, ${est}, Brasil`;
-  try {
-    const data = await api('GET', `/util/geocode?q=${encodeURIComponent(q)}`);
-    if (Array.isArray(data) && data.length) {
-      const lat = parseFloat(data[0].lat);
-      const lng = parseFloat(data[0].lon);
-      const latEl = document.getElementById(prefix+'lat');
-      const lngEl = document.getElementById(prefix+'lng');
-      if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
-      if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
-      atualizarMapa(lat, lng);
-      if (stEl) { stEl.textContent = '✓ Endereço preenchido e localizado no mapa'; stEl.style.color = 'var(--success)'; }
-    } else {
-      if (stEl) { stEl.textContent = '✓ Endereço preenchido (endereço não localizado no mapa)'; stEl.style.color = 'var(--success)'; }
-    }
-  } catch(e) {
-    if (stEl) { stEl.textContent = '✓ Endereço preenchido (sem localização automática)'; stEl.style.color = 'var(--success)'; }
-    console.warn('Geocodificação falhou:', e.message);
+  if (stEl) { stEl.innerHTML = '<span class="spinner spinner-sm"></span> Localizando no mapa...'; stEl.style.color = 'var(--text3)'; }
+
+  // Tenta do mais especifico para o menos especifico
+  const tentativas = [
+    num ? `${log} ${num}, ${bai}, ${cid}, ${est}, Brasil` : null,
+    num ? `${log} ${num}, ${cid}, ${est}, Brasil` : null,
+    `${log}, ${bai}, ${cid}, ${est}, Brasil`,
+    `${log}, ${cid}, ${est}, Brasil`,
+    `${cid}, ${est}, Brasil`,
+  ].filter(Boolean);
+
+  for (const q of tentativas) {
+    try {
+      const data = await api('GET', `/util/geocode?q=${encodeURIComponent(q)}`);
+      if (Array.isArray(data) && data.length) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        const latEl = document.getElementById(prefix+'lat');
+        const lngEl = document.getElementById(prefix+'lng');
+        if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
+        if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
+        atualizarMapa(lat, lng);
+        if (stEl) { stEl.textContent = '✓ Localizado no mapa'; stEl.style.color = 'var(--success)'; }
+        return; // sucesso - para aqui
+      }
+    } catch(e) { /* tenta proxima */ }
   }
+  if (stEl) { stEl.textContent = '✓ Endereço preenchido (localização manual necessária)'; stEl.style.color = 'var(--text2)'; }
 }
 
 // ── Mapa Leaflet ──────────────────────────────────────────────
@@ -575,9 +584,13 @@ function openPontoModal(p){
         <input id="p-logradouro" value="${p?.logradouro||''}"
           onblur="if(this.value.trim()) geocodificarEndereco('p-')"/></div>
       <div class="form-group"><label>Número</label>
-        <input id="p-numero" value="${p?.numero||''}"
-          onblur="if(this.value.trim()) geocodificarEndereco('p-')"
-          placeholder="285"/></div>
+        <div style="display:flex;gap:6px">
+          <input id="p-numero" value="${p?.numero||''}" placeholder="285"
+            onblur="geocodificarEndereco('p-')" style="flex:1"/>
+          <button type="button" class="btn btn-blue btn-sm" style="white-space:nowrap;margin-top:0"
+            onclick="geocodificarEndereco('p-')" title="Atualizar posição no mapa">📍</button>
+        </div>
+      </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Complemento</label><input id="p-complemento" value="${p?.complemento||''}"/></div>
