@@ -267,12 +267,9 @@ async function buscarCEP(prefix, fillCoords) {
     document.getElementById(prefix+'estado').value = d.uf||'';
     st.textContent='✓ Endereço preenchido'; st.style.color='var(--success)';
     document.getElementById(prefix+'numero')?.focus();
-    // Sempre geocodifica para pontos de mídia (fillCoords=true)
     if (fillCoords) {
-      st.innerHTML='✓ Endereço preenchido &nbsp;<span class="spinner spinner-sm"></span> Localizando no mapa...';
-      st.style.color='var(--success)';
-      await geocodificarEndereco(prefix);
-      st.textContent='✓ Endereço preenchido e localizado no mapa';
+      // Aguarda DOM atualizar antes de geocodificar
+      setTimeout(() => geocodificarEndereco(prefix), 300);
     }
   } catch(e) { st.textContent=e.message; st.style.color='var(--danger)'; }
 }
@@ -292,7 +289,8 @@ async function geocodificarEndereco(prefix) {
   const cid = document.getElementById(prefix+'cidade')?.value||'';
   const est = document.getElementById(prefix+'estado')?.value||'';
   if (!log || !cid) return;
-  // Proxy backend: evita bloqueio TLS/CORS no executavel Windows
+  const stEl = document.getElementById(prefix+'cep-status');
+  if (stEl) { stEl.textContent = '🗺 Localizando no mapa...'; stEl.style.color = 'var(--text3)'; }
   const q = `${log} ${num}, ${cid}, ${est}, Brasil`;
   try {
     const data = await api('GET', `/util/geocode?q=${encodeURIComponent(q)}`);
@@ -304,8 +302,14 @@ async function geocodificarEndereco(prefix) {
       if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
       if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
       atualizarMapa(lat, lng);
+      if (stEl) { stEl.textContent = '✓ Endereço preenchido e localizado no mapa'; stEl.style.color = 'var(--success)'; }
+    } else {
+      if (stEl) { stEl.textContent = '✓ Endereço preenchido (endereço não localizado no mapa)'; stEl.style.color = 'var(--success)'; }
     }
-  } catch(e) { console.warn('Geocodificação falhou:', e.message); }
+  } catch(e) {
+    if (stEl) { stEl.textContent = '✓ Endereço preenchido (sem localização automática)'; stEl.style.color = 'var(--success)'; }
+    console.warn('Geocodificação falhou:', e.message);
+  }
 }
 
 // ── Mapa Leaflet ──────────────────────────────────────────────
@@ -314,31 +318,27 @@ function initMap(lat, lng) {
   setTimeout(()=>{
     const el = document.getElementById('map');
     if (!el) return;
-    const center = (lat && lng) ? [lat, lng] : [-15.7801, -47.9292];
-    // Mapa somente leitura: desabilita zoom por scroll, arrastar e clique
-    _map = L.map('map', {
-      dragging: false,
-      touchZoom: false,
-      scrollWheelZoom: false,
-      doubleClickZoom: false,
-      boxZoom: false,
-      keyboard: false,
-      zoomControl: true
-    }).setView(center, lat?15:5);
+    const center = (lat && lng) ? [lat, lng] : [-21.1255, -48.9658]; // Catanduva-SP como default
+    const zoom   = (lat && lng) ? 15 : 13;
+    _map = L.map('map', {zoomControl: true, dragging: true, scrollWheelZoom: true}).setView(center, zoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       {attribution:'© OpenStreetMap', maxZoom:19}).addTo(_map);
     if (lat && lng) {
-      _mapMarker = L.marker([lat,lng]).addTo(_map);
+      _mapMarker = L.marker([lat, lng]).addTo(_map);
     }
-    // Mapa é somente leitura — posição definida pelo endereço/CEP
-  }, 100);
+    // Mapa somente leitura: usuario pode navegar mas nao posicionar marcador
+  }, 150);
 }
 
 function atualizarMapa(lat, lng) {
-  if (!_map) return;
+  if (!_map) {
+    // Mapa ainda nao inicializado - agenda atualizacao
+    setTimeout(() => atualizarMapa(lat, lng), 200);
+    return;
+  }
   if (_mapMarker) _map.removeLayer(_mapMarker);
-  _mapMarker = L.marker([lat,lng]).addTo(_map);
-  _map.setView([lat,lng], 15);
+  _mapMarker = L.marker([lat, lng]).addTo(_map);
+  _map.setView([lat, lng], 15);
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -584,11 +584,15 @@ function openPontoModal(p){
         <select id="p-estado">${['','AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s=>`<option ${p?.estado===s?'selected':''}>${s}</option>`).join('')}</select>
       </div>
     </div>
-    <div class="section-title">🗺️ Localização no Mapa</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:8px">📌 Posição definida automaticamente pelo CEP e endereço. Para alterar, atualize o CEP.</div>
+    <div class="section-title">🗺️ Localização no mapa</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">📌 Posição definida automaticamente pelo CEP e endereço. Para alterar, atualize o CEP.</p>
     <div class="form-row">
-      <div class="form-group"><label>Latitude</label><input id="p-lat" type="text" inputmode="decimal" placeholder="-21.123456" value="${lat||''}" readonly style="opacity:.6;cursor:default"/></div>
-      <div class="form-group"><label>Longitude</label><input id="p-lng" type="text" inputmode="decimal" placeholder="-48.123456" value="${lng||''}" readonly style="opacity:.6;cursor:default"/></div>
+      <div class="form-group"><label>Latitude</label>
+        <input id="p-lat" type="text" placeholder="-21.123456" value="${lat||''}" readonly style="opacity:.6;cursor:not-allowed"/>
+      </div>
+      <div class="form-group"><label>Longitude</label>
+        <input id="p-lng" type="text" placeholder="-48.123456" value="${lng||''}" readonly style="opacity:.6;cursor:not-allowed"/>
+      </div>
     </div>
     <div id="map"></div>
   `,`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -596,11 +600,7 @@ function openPontoModal(p){
   initMap(lat, lng);
 }
 
-function atualizarMapaManual(){
-  const lat=parseCoord(document.getElementById('p-lat')?.value);
-  const lng=parseCoord(document.getElementById('p-lng')?.value);
-  if(!isNaN(lat)&&!isNaN(lng)) atualizarMapa(lat,lng);
-}
+// atualizarMapaManual removida - mapa somente leitura
 
 function parseCoord(val){
   // Aceita tanto ponto quanto virgula como separador decimal (pt-BR)
