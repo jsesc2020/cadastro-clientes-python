@@ -486,6 +486,25 @@ def resumo_financeiro():
     conn.close()
     return jsonify(resultado)
 
+# ── Proxy Nominatim (geocodificação) ─────────────────────────
+@app.route('/api/util/geocode', methods=['GET'])
+@token_required
+def proxy_geocode():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'error': 'q required'}), 400
+    url = f'https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(q)}&limit=1'
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'MidiaControl/1.0',
+            'Accept-Language': 'pt-BR'
+        })
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
 # ── Proxy CNPJ (BrasilAPI) ────────────────────────────────────
 # Proxy interno evita bloqueio CORS/TLS quando rodando como .exe
 @app.route('/api/util/cnpj/<cnpj>', methods=['GET'])

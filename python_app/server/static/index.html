@@ -293,14 +293,11 @@ async function geocodificarEndereco(prefix) {
   const stEl = document.getElementById(prefix+'cep-status');
   if (stEl) { stEl.innerHTML = '<span class="spinner spinner-sm"></span> Localizando no mapa...'; stEl.style.color = 'var(--text3)'; }
 
-  // Tenta do mais especifico para o menos especifico
+  // Tenta do mais especifico para o menos especifico (max 2 para evitar lentidao)
   const tentativas = [
-    num ? `${log} ${num}, ${bai}, ${cid}, ${est}, Brasil` : null,
-    num ? `${log} ${num}, ${cid}, ${est}, Brasil` : null,
-    `${log}, ${bai}, ${cid}, ${est}, Brasil`,
-    `${log}, ${cid}, ${est}, Brasil`,
+    num ? `${log} ${num}, ${cid}, ${est}, Brasil` : `${log}, ${cid}, ${est}, Brasil`,
     `${cid}, ${est}, Brasil`,
-  ].filter(Boolean);
+  ];
 
   for (const q of tentativas) {
     try {
@@ -310,11 +307,19 @@ async function geocodificarEndereco(prefix) {
         const lng = parseFloat(data[0].lon);
         const latEl = document.getElementById(prefix+'lat');
         const lngEl = document.getElementById(prefix+'lng');
-        if (latEl) latEl.value = lat.toFixed(6).replace(',','.');
-        if (lngEl) lngEl.value = lng.toFixed(6).replace(',','.');
+        if (latEl) {
+          latEl.value = lat.toFixed(6).replace(',','.');
+          latEl.style.color = 'var(--success)';
+          latEl.style.opacity = '1';
+        }
+        if (lngEl) {
+          lngEl.value = lng.toFixed(6).replace(',','.');
+          lngEl.style.color = 'var(--success)';
+          lngEl.style.opacity = '1';
+        }
         atualizarMapa(lat, lng);
         if (stEl) { stEl.textContent = '✓ Localizado no mapa'; stEl.style.color = 'var(--success)'; }
-        return; // sucesso - para aqui
+        return;
       }
     } catch(e) { /* tenta proxima */ }
   }
@@ -607,10 +612,10 @@ function openPontoModal(p){
     <p style="font-size:12px;color:var(--text2);margin-bottom:10px">📌 Posição definida automaticamente pelo CEP e endereço. Para alterar, atualize o CEP.</p>
     <div class="form-row">
       <div class="form-group"><label>Latitude</label>
-        <input id="p-lat" type="text" placeholder="-21.123456" value="${lat||''}" readonly style="opacity:.6;cursor:not-allowed"/>
+        <input id="p-lat" type="text" placeholder="Calculando..." value="${lat||''}" readonly style="opacity:.6;cursor:not-allowed;font-family:monospace"/>
       </div>
       <div class="form-group"><label>Longitude</label>
-        <input id="p-lng" type="text" placeholder="-48.123456" value="${lng||''}" readonly style="opacity:.6;cursor:not-allowed"/>
+        <input id="p-lng" type="text" placeholder="Calculando..." value="${lng||''}" readonly style="opacity:.6;cursor:not-allowed;font-family:monospace"/>
       </div>
     </div>
     <div id="map"></div>

@@ -51,4 +51,4 @@ if __name__ == '__main__':
     init_db()
     threading.Thread(target=_open_browser, daemon=True).start()
     threading.Thread(target=_watchdog,     daemon=False).start()
-    app.run(host='127.0.0.1', port=PORT, debug=False, use_reloader=False)
+    app.run(host='127.0.0.1', port=PORT, debug=False, use_reloader=False, threaded=True)
